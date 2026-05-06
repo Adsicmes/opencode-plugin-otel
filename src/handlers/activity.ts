@@ -3,39 +3,52 @@ import type { EventSessionDiff, EventCommandExecuted } from "@opencode-ai/sdk"
 import { isMetricEnabled } from "../util.ts"
 import type { HandlerContext } from "../types.ts"
 
-/** Records lines-added and lines-removed metrics for each file in the diff. */
+/**
+ * Records lines-added/removed for a `session.diff` event. opencode publishes each event
+ * with the cumulative session diff (first snapshot → latest), so we emit two instruments:
+ * `opencode.lines_of_code.count` (Counter) receives only the positive delta since the
+ * previous event for this session, so summing across a session yields the net total without
+ * double counting. `opencode.lines_of_code.total` (Gauge) records the current cumulative
+ * total, overwritten on every event.
+ */
 export function handleSessionDiff(e: EventSessionDiff, ctx: HandlerContext) {
   const sessionID = e.properties.sessionID
   const linesEnabled = isMetricEnabled("lines_of_code.count", ctx)
+  const totalEnabled = isMetricEnabled("lines_of_code.total", ctx)
   let totalAdded = 0
   let totalRemoved = 0
   for (const fileDiff of e.properties.diff) {
-    if (fileDiff.additions > 0) {
-      if (linesEnabled) {
-        ctx.instruments.linesCounter.add(fileDiff.additions, {
-          ...ctx.commonAttrs,
-          "session.id": sessionID,
-          type: "added",
-        })
-      }
-      totalAdded += fileDiff.additions
+    totalAdded += fileDiff.additions
+    totalRemoved += fileDiff.deletions
+  }
+
+  const prev = ctx.sessionDiffTotals.get(sessionID) ?? { additions: 0, deletions: 0 }
+  const deltaAdded = totalAdded - prev.additions
+  const deltaRemoved = totalRemoved - prev.deletions
+  ctx.sessionDiffTotals.set(sessionID, { additions: totalAdded, deletions: totalRemoved })
+
+  const baseAttrs = { ...ctx.commonAttrs, "session.id": sessionID }
+
+  if (linesEnabled) {
+    if (deltaAdded > 0) {
+      ctx.instruments.linesCounter.add(deltaAdded, { ...baseAttrs, type: "added" })
     }
-    if (fileDiff.deletions > 0) {
-      if (linesEnabled) {
-        ctx.instruments.linesCounter.add(fileDiff.deletions, {
-          ...ctx.commonAttrs,
-          "session.id": sessionID,
-          type: "removed",
-        })
-      }
-      totalRemoved += fileDiff.deletions
+    if (deltaRemoved > 0) {
+      ctx.instruments.linesCounter.add(deltaRemoved, { ...baseAttrs, type: "removed" })
     }
   }
-  ctx.log("debug", "otel: lines_of_code counter incremented", {
+  if (totalEnabled) {
+    ctx.instruments.linesTotalGauge.record(totalAdded, { ...baseAttrs, type: "added" })
+    ctx.instruments.linesTotalGauge.record(totalRemoved, { ...baseAttrs, type: "removed" })
+  }
+
+  ctx.log("debug", "otel: lines_of_code metrics updated", {
     sessionID,
     files: e.properties.diff.length,
-    added: totalAdded,
-    removed: totalRemoved,
+    deltaAdded,
+    deltaRemoved,
+    totalAdded,
+    totalRemoved,
   })
 }
 

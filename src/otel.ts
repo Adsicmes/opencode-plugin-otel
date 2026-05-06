@@ -147,7 +147,11 @@ export function createInstruments(prefix: string): Instruments {
     }),
     linesCounter: meter.createCounter(`${prefix}lines_of_code.count`, {
       unit: "{line}",
-      description: "Count of lines of code added or removed",
+      description: "Per-event delta of lines added/removed — sum over a session yields the net cumulative total.",
+    }),
+    linesTotalGauge: meter.createGauge(`${prefix}lines_of_code.total`, {
+      unit: "{line}",
+      description: "Cumulative lines added/removed in the current session, refreshed on every session.diff.",
     }),
     commitCounter: meter.createCounter(`${prefix}commit.count`, {
       unit: "{commit}",

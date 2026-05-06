@@ -69,6 +69,48 @@ describe("handleSessionDiff", () => {
     handleSessionDiff(makeSessionDiff("ses_1", [{ file: "foo.ts", additions: 0, deletions: 0 }]), ctx)
     expect(counters.lines.calls).toHaveLength(0)
   })
+
+  test("linesCounter emits only positive deltas across multiple events", () => {
+    const { ctx, counters } = makeCtx()
+    // opencode publishes session.diff with the CUMULATIVE session total every event.
+    // Cumulative sequence: 4, 9, 9, 11.  Expected deltas: 4, 5, 0 (skipped), 2.
+    handleSessionDiff(makeSessionDiff("ses_1", [{ file: "a.ts", additions: 4, deletions: 0 }]), ctx)
+    handleSessionDiff(makeSessionDiff("ses_1", [{ file: "a.ts", additions: 9, deletions: 0 }]), ctx)
+    handleSessionDiff(makeSessionDiff("ses_1", [{ file: "a.ts", additions: 9, deletions: 0 }]), ctx)
+    handleSessionDiff(makeSessionDiff("ses_1", [{ file: "a.ts", additions: 11, deletions: 0 }]), ctx)
+    const added = counters.lines.calls.filter((c) => c.attrs["type"] === "added").map((c) => c.value)
+    expect(added).toEqual([4, 5, 2])
+    expect(added.reduce((a, b) => a + b, 0)).toBe(11) // net, not 4+9+9+11=33
+  })
+
+  test("linesCounter skips negative deltas (revert-to-baseline)", () => {
+    const { ctx, counters } = makeCtx()
+    handleSessionDiff(makeSessionDiff("ses_1", [{ file: "a.ts", additions: 5, deletions: 0 }]), ctx)
+    handleSessionDiff(makeSessionDiff("ses_1", [{ file: "a.ts", additions: 0, deletions: 0 }]), ctx)
+    const added = counters.lines.calls.filter((c) => c.attrs["type"] === "added").map((c) => c.value)
+    expect(added).toEqual([5])
+  })
+
+  test("linesTotalGauge records cumulative totals, including zero after revert", () => {
+    const { ctx, gauges } = makeCtx()
+    handleSessionDiff(makeSessionDiff("ses_1", [{ file: "a.ts", additions: 5, deletions: 2 }]), ctx)
+    handleSessionDiff(makeSessionDiff("ses_1", [{ file: "a.ts", additions: 0, deletions: 0 }]), ctx)
+    const added = gauges.linesTotal.calls.filter((c) => c.attrs["type"] === "added").map((c) => c.value)
+    const removed = gauges.linesTotal.calls.filter((c) => c.attrs["type"] === "removed").map((c) => c.value)
+    expect(added).toEqual([5, 0])
+    expect(removed).toEqual([2, 0])
+  })
+
+  test("tracks deltas independently per session", () => {
+    const { ctx, counters } = makeCtx()
+    handleSessionDiff(makeSessionDiff("ses_1", [{ file: "a.ts", additions: 3, deletions: 0 }]), ctx)
+    handleSessionDiff(makeSessionDiff("ses_2", [{ file: "b.ts", additions: 7, deletions: 0 }]), ctx)
+    handleSessionDiff(makeSessionDiff("ses_1", [{ file: "a.ts", additions: 5, deletions: 0 }]), ctx)
+    const ses1 = counters.lines.calls.filter((c) => c.attrs["session.id"] === "ses_1").map((c) => c.value)
+    const ses2 = counters.lines.calls.filter((c) => c.attrs["session.id"] === "ses_2").map((c) => c.value)
+    expect(ses1).toEqual([3, 2])
+    expect(ses2).toEqual([7])
+  })
 })
 
 describe("handleCommandExecuted", () => {
