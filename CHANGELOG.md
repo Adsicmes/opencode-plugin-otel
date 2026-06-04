@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [1.1.0](https://github.com/DEVtheOPS/opencode-plugin-otel/compare/v1.0.0...v1.1.0) (2026-06-04)
+
+
+### Features
+
+* **trace:** support remote W3C parent context ([1da0a85](https://github.com/DEVtheOPS/opencode-plugin-otel/commit/1da0a857e9303a8f7020f20627d01fecb95cfad0))
+* **trace:** support remote W3C parent context ([83e3d42](https://github.com/DEVtheOPS/opencode-plugin-otel/commit/83e3d4211400eb49520c7b58bcaeff262763e799))
+
+
+### Bug Fixes
+
+* added protobuf exporters from [@opentelemetry](https://github.com/opentelemetry) ([19e600f](https://github.com/DEVtheOPS/opencode-plugin-otel/commit/19e600f31c3e70cf21d6ec5c145aad67edbd022f))
+* **probe:** reject scheme-less endpoint URLs ([df7a62b](https://github.com/DEVtheOPS/opencode-plugin-otel/commit/df7a62b3cd801f753d4a03342fc178fb4aac2874))
+
 ## [1.0.0](https://github.com/DEVtheOPS/opencode-plugin-otel/compare/v0.9.0...v1.0.0) (2026-05-18)
 
 
