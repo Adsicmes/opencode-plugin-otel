@@ -395,6 +395,11 @@ describe("loadConfig options", () => {
     expect(cfg.metricsInterval).toBe(60000)
   })
 
+  test("null options are handled safely", () => {
+    expect(() => loadConfig(null as unknown as Parameters<typeof loadConfig>[0])).not.toThrow()
+    expect(loadConfig(null as unknown as Parameters<typeof loadConfig>[0]).endpoint).toBe("http://localhost:4317")
+  })
+
   test("option metricPrefix overrides env var", () => {
     process.env["OPENCODE_METRIC_PREFIX"] = "env."
     expect(loadConfig({ metricPrefix: "claude_code." }).metricPrefix).toBe("claude_code.")
@@ -416,6 +421,20 @@ describe("loadConfig options", () => {
     const cfg = loadConfig({ metricsTemporality: "delta" })
     expect(cfg.metricsTemporality).toBe("delta")
     expect(process.env["OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE"]).toBe("delta")
+  })
+
+  test("invalid protocol option falls back to env then default", () => {
+    process.env["OPENCODE_OTLP_PROTOCOL"] = "http/json"
+    expect(loadConfig({ protocol: "ftp" as never }).protocol).toBe("http/json")
+    delete process.env["OPENCODE_OTLP_PROTOCOL"]
+    expect(loadConfig({ protocol: "ftp" as never }).protocol).toBe("grpc")
+  })
+
+  test("invalid metricsTemporality option falls back to env then default", () => {
+    process.env["OPENCODE_OTLP_METRICS_TEMPORALITY"] = "lowmemory"
+    expect(loadConfig({ metricsTemporality: "weekly" as never }).metricsTemporality).toBe("lowmemory")
+    delete process.env["OPENCODE_OTLP_METRICS_TEMPORALITY"]
+    expect(loadConfig({ metricsTemporality: "weekly" as never }).metricsTemporality).toBeUndefined()
   })
 
   test("option disabledMetrics array overrides env var", () => {
