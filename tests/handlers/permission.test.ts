@@ -42,6 +42,7 @@ describe("handlePermissionUpdated", () => {
 describe("handlePermissionReplied", () => {
   test("emits tool_decision log on allow", () => {
     const { ctx, logger } = makeCtx()
+    ctx.sessionTotals.set("ses_1", { startMs: 0, tokens: 0, cost: 0, messages: 0, agent: "review", agentType: "subagent" })
     handlePermissionUpdated(makePermissionUpdated("perm_1"), ctx)
     handlePermissionReplied(makePermissionReplied("perm_1", "allow"), ctx)
     const record = logger.records.at(0)!
@@ -50,6 +51,8 @@ describe("handlePermissionReplied", () => {
     expect(record.attributes?.["source"]).toBe("allow")
     expect(record.attributes?.["tool_name"]).toBe("Read file")
     expect(record.attributes?.["tool_type"]).toBe("tool")
+    expect(record.attributes?.["agent.name"]).toBe("review")
+    expect(record.attributes?.["agent.type"]).toBe("subagent")
   })
 
   test("emits tool_decision log on allowAlways", () => {

@@ -54,6 +54,9 @@ export type Instruments = {
   subtaskCounter: Counter
 }
 
+/** Session role emitted by opencode: either the primary/root agent or a spawned subagent. */
+export type SessionAgentType = "primary" | "subagent"
+
 /** Accumulated per-session totals used for gauge snapshots on session.idle. */
 export type SessionTotals = {
   startMs: number
@@ -61,6 +64,7 @@ export type SessionTotals = {
   cost: number
   messages: number
   agent: string
+  agentType: SessionAgentType
 }
 
 /** Shared context threaded through every event handler. */

@@ -1,5 +1,5 @@
 import { MAX_PENDING } from "./types.ts"
-import type { HandlerContext } from "./types.ts"
+import type { HandlerContext, SessionAgentType } from "./types.ts"
 
 /** Returns a human-readable summary string from an opencode error object. */
 export function errorSummary(err: { name: string; data?: unknown } | undefined): string {
@@ -57,5 +57,27 @@ export function accumulateSessionTotals(
     cost: existing.cost + cost,
     messages: existing.messages + 1,
     agent: existing.agent,
+    agentType: existing.agentType,
   })
+}
+
+/** Returns the current session-scoped agent name/type, defaulting to `unknown` when unavailable. */
+export function getSessionAgentMeta(
+  sessionID: string,
+  ctx: Pick<HandlerContext, "sessionTotals">,
+): { agentName: string; agentType: SessionAgentType | "unknown" } {
+  const totals = ctx.sessionTotals.get(sessionID)
+  return {
+    agentName: totals?.agent ?? "unknown",
+    agentType: totals?.agentType ?? "unknown",
+  }
+}
+
+/** Builds a consistent agent attribute set for OTLP logs, metrics, and spans. */
+export function agentAttrs(agentName: string, agentType: SessionAgentType | "unknown") {
+  return {
+    agent: agentName,
+    "agent.name": agentName,
+    "agent.type": agentType,
+  } as const
 }
