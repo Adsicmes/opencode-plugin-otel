@@ -143,10 +143,13 @@ describe("handleCommandExecuted", () => {
 
   test("emits commit log record", () => {
     const { ctx, logger } = makeCtx()
+    ctx.sessionTotals.set("ses_1", { startMs: 0, tokens: 0, cost: 0, messages: 0, agent: "build", agentType: "primary" })
     handleCommandExecuted(makeCommandExecuted("bash", "git commit -m 'fix: bug'"), ctx)
     expect(logger.records).toHaveLength(1)
     expect(logger.records.at(0)!.body).toBe("commit")
     expect(logger.records.at(0)!.attributes?.["session.id"]).toBe("ses_1")
+    expect(logger.records.at(0)!.attributes?.["agent.name"]).toBe("build")
+    expect(logger.records.at(0)!.attributes?.["agent.type"]).toBe("primary")
   })
 
   test("ignores non-bash commands", () => {

@@ -124,7 +124,7 @@ describe("handleSessionIdle", () => {
   test("records session token and cost histograms when totals exist", async () => {
     const { ctx, gauges } = makeCtx()
     await handleSessionCreated(makeSessionCreated("ses_1"), ctx)
-    ctx.sessionTotals.set("ses_1", { startMs: Date.now() - 500, tokens: 150, cost: 0.03, messages: 2, agent: "build" })
+    ctx.sessionTotals.set("ses_1", { startMs: Date.now() - 500, tokens: 150, cost: 0.03, messages: 2, agent: "build", agentType: "primary" })
     handleSessionIdle(makeSessionIdle("ses_1"), ctx)
     expect(gauges.sessionToken.calls).toHaveLength(1)
     expect(gauges.sessionToken.calls.at(0)!.value).toBe(150)
@@ -135,12 +135,14 @@ describe("handleSessionIdle", () => {
   test("emits total_tokens and total_messages in log record attributes", async () => {
     const { ctx, logger } = makeCtx()
     await handleSessionCreated(makeSessionCreated("ses_1"), ctx)
-    ctx.sessionTotals.set("ses_1", { startMs: Date.now() - 100, tokens: 200, cost: 0.05, messages: 3, agent: "general" })
+    ctx.sessionTotals.set("ses_1", { startMs: Date.now() - 100, tokens: 200, cost: 0.05, messages: 3, agent: "general", agentType: "primary" })
     handleSessionIdle(makeSessionIdle("ses_1"), ctx)
     const record = logger.records.find(r => r.body === "session.idle")!
     expect(record.attributes?.["total_tokens"]).toBe(200)
     expect(record.attributes?.["total_cost_usd"]).toBe(0.05)
     expect(record.attributes?.["total_messages"]).toBe(3)
+    expect(record.attributes?.["agent.name"]).toBe("general")
+    expect(record.attributes?.["agent.type"]).toBe("primary")
   })
 
   test("does not record histograms when no prior session.created", () => {
@@ -220,18 +222,21 @@ describe("handleSessionCreated — is_subagent", () => {
     const { ctx, logger } = makeCtx()
     await handleSessionCreated(makeSessionCreated("ses_1"), ctx)
     expect(logger.records.at(0)!.attributes?.["is_subagent"]).toBe(false)
+    expect(logger.records.at(0)!.attributes?.["agent.type"]).toBe("primary")
   })
 
   test("includes is_subagent=true on session.created log record for child session", async () => {
     const { ctx, logger } = makeCtx()
     await handleSessionCreated(makeSessionCreated("ses_child", 1000, "ses_parent"), ctx)
     expect(logger.records.at(0)!.attributes?.["is_subagent"]).toBe(true)
+    expect(logger.records.at(0)!.attributes?.["agent.type"]).toBe("subagent")
   })
 
-  test("seeds sessionTotals agent as 'unknown' on creation", async () => {
+  test("seeds sessionTotals agent metadata on creation", async () => {
     const { ctx } = makeCtx()
     await handleSessionCreated(makeSessionCreated("ses_1"), ctx)
     expect(ctx.sessionTotals.get("ses_1")!.agent).toBe("unknown")
+    expect(ctx.sessionTotals.get("ses_1")!.agentType).toBe("primary")
   })
 })
 

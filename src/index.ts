@@ -25,6 +25,7 @@ import { handleSessionCreated, handleSessionIdle, handleSessionError, handleSess
 import { handleMessageUpdated, handleMessagePartUpdated, startMessageSpan } from "./handlers/message.ts"
 import { handlePermissionUpdated, handlePermissionReplied } from "./handlers/permission.ts"
 import { handleSessionDiff, handleCommandExecuted } from "./handlers/activity.ts"
+import { agentAttrs, getSessionAgentMeta } from "./util.ts"
 
 const PLUGIN_VERSION: string = (pkg as { version?: string }).version ?? "unknown"
 
@@ -182,10 +183,11 @@ export const OtelPlugin: Plugin = async ({ project, client, directory, worktree 
 
     "chat.message": safe("chat.message", async (input, output) => {
       const agent = input.agent ?? "unknown"
+      const { agentType } = getSessionAgentMeta(input.sessionID, ctx)
       const totals = sessionTotals.get(input.sessionID)
       if (totals) totals.agent = agent
       const sessionSpan = sessionSpans.get(input.sessionID)
-      if (sessionSpan) sessionSpan.setAttribute(AGENT_NAME, agent)
+      if (sessionSpan) sessionSpan.setAttributes({ [AGENT_NAME]: agent, "agent.type": agentType })
       const promptText = output.parts.map((part) => {
         switch (part.type) {
           case "text":
@@ -211,7 +213,7 @@ export const OtelPlugin: Plugin = async ({ project, client, directory, worktree 
         attributes: {
           "event.name": "user_prompt",
           "session.id": input.sessionID,
-          agent,
+          ...agentAttrs(agent, agentType),
           prompt_length: promptLength,
           model: input.model
             ? `${input.model.providerID}/${input.model.modelID}`
