@@ -1,5 +1,23 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test"
-import { parseEnvInt, loadConfig, resolveHelperPath, resolveLogLevel, TRACE_TYPES } from "../src/config.ts"
+import { parseAttributePairs, parseEnvInt, loadConfig, resolveHelperPath, resolveLogLevel, TRACE_TYPES } from "../src/config.ts"
+
+describe("parseAttributePairs", () => {
+  test("parses comma-separated key=value pairs", () => {
+    expect(parseAttributePairs("team=platform,env=prod")).toEqual({ team: "platform", env: "prod" })
+  })
+
+  test("trims whitespace and keeps empty values", () => {
+    expect(parseAttributePairs(" team = platform , empty = ")).toEqual({ team: "platform", empty: "" })
+  })
+
+  test("uses only the first equals sign as the separator", () => {
+    expect(parseAttributePairs("auth=Bearer abc=123")).toEqual({ auth: "Bearer abc=123" })
+  })
+
+  test("ignores malformed pairs", () => {
+    expect(parseAttributePairs("missingequals,=novalue,,valid=yes")).toEqual({ valid: "yes" })
+  })
+})
 
 describe("parseEnvInt", () => {
   test("returns fallback when env var is unset", () => {
@@ -50,6 +68,7 @@ describe("loadConfig", () => {
     "OPENCODE_OTLP_HEADERS",
     "OPENCODE_OTLP_HEADERS_HELPER",
     "OPENCODE_RESOURCE_ATTRIBUTES",
+    "OPENCODE_SPAN_ATTRIBUTES",
     "OPENCODE_TRACEPARENT",
     "OPENCODE_TRACESTATE",
     "OPENCODE_OTLP_METRICS_TEMPORALITY",
@@ -142,6 +161,11 @@ describe("loadConfig", () => {
     const cfg = loadConfig()
     expect(cfg.traceparent).toBe("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01")
     expect(cfg.tracestate).toBe("vendor=value")
+  })
+
+  test("reads OPENCODE_SPAN_ATTRIBUTES", () => {
+    process.env["OPENCODE_SPAN_ATTRIBUTES"] = "team=platform,env=prod"
+    expect(loadConfig().spanAttributes).toBe("team=platform,env=prod")
   })
 
   test("does not set OTEL_EXPORTER_OTLP_HEADERS when OPENCODE_OTLP_HEADERS is unset", () => {

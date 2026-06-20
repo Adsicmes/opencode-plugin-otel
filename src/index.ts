@@ -17,7 +17,7 @@ import type {
   EventCommandExecuted,
 } from "@opencode-ai/sdk"
 import { LEVELS, type Level, type HandlerContext } from "./types.ts"
-import { loadConfig, resolveHelperPath, resolveLogLevel } from "./config.ts"
+import { loadConfig, parseAttributePairs, resolveHelperPath, resolveLogLevel } from "./config.ts"
 import { probeEndpoint } from "./probe.ts"
 import { setupOtel, createInstruments } from "./otel.ts"
 import { remoteParentContext } from "./trace-context.ts"
@@ -62,6 +62,7 @@ export const OtelPlugin: Plugin = async ({ project, client, directory, worktree 
     headersSet: !!config.otlpHeaders,
     headersHelperSet: !!config.otlpHeadersHelper,
     resourceAttributesSet: !!config.resourceAttributes,
+    spanAttributesSet: !!config.spanAttributes,
   })
 
   const probe = await probeEndpoint(config.endpoint)
@@ -106,7 +107,10 @@ export const OtelPlugin: Plugin = async ({ project, client, directory, worktree 
   const sessionInputs = new Map()
   const messageOutputs = new Map()
   const { disabledMetrics, disabledTraces } = config
-  const commonAttrs = { "project.id": project.id } as const
+  const commonAttrs = {
+    "project.id": project.id,
+    ...parseAttributePairs(config.spanAttributes),
+  } as const
 
   if (disabledMetrics.size > 0) {
     await log("info", "metrics disabled", { disabled: [...disabledMetrics] })

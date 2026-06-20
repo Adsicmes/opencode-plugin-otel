@@ -125,7 +125,7 @@ describe("handleMessageUpdated", () => {
   })
 
   test("increments all token counters", async () => {
-    const { ctx, counters } = makeCtx()
+    const { ctx, counters } = makeCtx("proj_test", [], [], true, { team: "platform" })
     await handleMessageUpdated(
       makeAssistantMessageUpdated({
         tokens: { input: 100, output: 50, reasoning: 10, cache: { read: 20, write: 5 } },
@@ -140,6 +140,7 @@ describe("handleMessageUpdated", () => {
     expect(types).toContain("cacheCreation")
     const inputCall = counters.token.calls.find((c) => c.attrs["type"] === "input")!
     expect(inputCall.value).toBe(100)
+    expect(inputCall.attrs["team"]).toBe("platform")
   })
 
   test("increments cost counter", async () => {
@@ -210,10 +211,11 @@ describe("handleMessageUpdated", () => {
   })
 
   test("emits api_request log record on success", async () => {
-    const { ctx, logger } = makeCtx()
+    const { ctx, logger } = makeCtx("proj_test", [], [], true, { team: "platform" })
     await handleMessageUpdated(makeAssistantMessageUpdated({}), ctx)
     expect(logger.records).toHaveLength(1)
     expect(logger.records.at(0)!.body).toBe("api_request")
+    expect(logger.records.at(0)!.attributes?.["team"]).toBe("platform")
   })
 
   test("emits api_error log record on error", async () => {

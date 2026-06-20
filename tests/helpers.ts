@@ -148,7 +148,13 @@ export type MockContext = {
   tracer: SpyTracer
 }
 
-export function makeCtx(projectID = "proj_test", disabledMetrics: string[] = [], disabledTraces: string[] = [], logsEnabled = true): MockContext {
+export function makeCtx(
+  projectID = "proj_test",
+  disabledMetrics: string[] = [],
+  disabledTraces: string[] = [],
+  logsEnabled = true,
+  extraCommonAttrs: Record<string, string> = {},
+): MockContext {
   const session = makeCounter()
   const token = makeCounter()
   const cost = makeCounter()
@@ -193,7 +199,7 @@ export function makeCtx(projectID = "proj_test", disabledMetrics: string[] = [],
       logger.emit(record)
     },
     instruments,
-    commonAttrs: { "project.id": projectID },
+    commonAttrs: { "project.id": projectID, ...extraCommonAttrs },
     pendingToolSpans: new Map(),
     pendingPermissions: new Map(),
     sessionTotals: new Map(),

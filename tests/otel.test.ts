@@ -68,6 +68,12 @@ describe("buildResource", () => {
     expect(resource.attributes["team"]).toBe("platform")
   })
 
+  test("resource attribute values may contain equals signs", () => {
+    process.env["OTEL_RESOURCE_ATTRIBUTES"] = "auth=Bearer abc=123"
+    const resource = buildResource("0.0.1")
+    expect(resource.attributes["auth"]).toBe("Bearer abc=123")
+  })
+
   test("env resource attributes override defaults", () => {
     process.env["OTEL_RESOURCE_ATTRIBUTES"] = "service.name=my-override"
     const resource = buildResource("0.0.1")

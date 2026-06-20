@@ -21,11 +21,28 @@ export type PluginConfig = {
   otlpHeaders: string | undefined
   otlpHeadersHelper: string | undefined
   resourceAttributes: string | undefined
+  spanAttributes: string | undefined
   traceparent: string | undefined
   tracestate: string | undefined
   metricsTemporality: MetricsTemporality | undefined
   disabledMetrics: Set<string>
   disabledTraces: Set<string>
+}
+
+export function parseAttributePairs(raw: string | undefined): Record<string, string> {
+  const attrs: Record<string, string> = {}
+  if (!raw) return attrs
+
+  for (const pair of raw.split(",")) {
+    const idx = pair.indexOf("=")
+    if (idx <= 0) continue
+    const key = pair.slice(0, idx).trim()
+    const value = pair.slice(idx + 1).trim()
+    if (!key) continue
+    attrs[key] = value
+  }
+
+  return attrs
 }
 
 /** Parses a positive integer from an environment variable, returning `fallback` if absent or invalid. */
@@ -67,6 +84,7 @@ export function loadConfig(): PluginConfig {
   const otlpHeaders = process.env["OPENCODE_OTLP_HEADERS"]
   const otlpHeadersHelper = process.env["OPENCODE_OTLP_HEADERS_HELPER"]
   const resourceAttributes = process.env["OPENCODE_RESOURCE_ATTRIBUTES"]
+  const spanAttributes = process.env["OPENCODE_SPAN_ATTRIBUTES"]
   const traceparent = process.env["OPENCODE_TRACEPARENT"]
   const tracestate = process.env["OPENCODE_TRACESTATE"]
   const rawTemporality = process.env["OPENCODE_OTLP_METRICS_TEMPORALITY"]
@@ -113,6 +131,7 @@ export function loadConfig(): PluginConfig {
     otlpHeaders,
     otlpHeadersHelper,
     resourceAttributes,
+    spanAttributes,
     traceparent,
     tracestate,
     metricsTemporality,

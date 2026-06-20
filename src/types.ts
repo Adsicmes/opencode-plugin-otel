@@ -17,8 +17,8 @@ export type PluginLogger = (
   extra?: Record<string, unknown>,
 ) => Promise<void>
 
-/** OTel resource attributes common to every emitted log and metric. */
-export type CommonAttrs = { readonly "project.id": string }
+/** OTel attributes common to every emitted span, log, and metric. */
+export type CommonAttrs = Readonly<Record<string, string>>
 
 /** In-flight tool execution tracked between `running` and `completed`/`error` part updates. */
 export type PendingToolSpan = {

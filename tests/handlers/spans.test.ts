@@ -107,10 +107,11 @@ describe("session spans", () => {
   })
 
   test("session span carries session.id attribute", () => {
-    const { ctx, tracer } = makeCtx()
+    const { ctx, tracer } = makeCtx("proj_test", [], [], true, { team: "platform" })
     handleSessionCreated(makeSessionCreated("ses_1"), ctx)
     expect(tracer.spans[0]!.attributes["session.id"]).toBe("ses_1")
     expect(tracer.spans[0]!.attributes[SESSION_ID]).toBe("ses_1")
+    expect(tracer.spans[0]!.attributes["team"]).toBe("platform")
   })
 
   test("session span is tagged as an OpenInference agent span", () => {
