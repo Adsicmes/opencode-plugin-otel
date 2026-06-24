@@ -106,11 +106,13 @@ export const OtelPlugin: Plugin = async ({ project, client, directory, worktree 
   const sessionDiffTotals = new Map()
   const runSpans = new Map()
   const runSpanContexts = new Map()
-  const sessionRunRoots = new Map()
+  const activeRuns = new Map()
+  const assistantRuns = new Map()
+  const pendingRuns = new Map()
+  const runInputs = new Map()
   const sessionSpans = new Map()
   const sessionSpanContexts = new Map()
   const messageSpans = new Map()
-  const sessionInputs = new Map()
   const messageOutputs = new Map()
   const { disabledMetrics, disabledTraces } = config
   const commonAttrs = {
@@ -146,11 +148,13 @@ export const OtelPlugin: Plugin = async ({ project, client, directory, worktree 
     rootContext,
     runSpans,
     runSpanContexts,
-    sessionRunRoots,
+    activeRuns,
+    assistantRuns,
+    pendingRuns,
+    runInputs,
     sessionSpans,
     sessionSpanContexts,
     messageSpans,
-    sessionInputs,
     messageOutputs,
   }
 
@@ -220,16 +224,26 @@ export const OtelPlugin: Plugin = async ({ project, client, directory, worktree 
             return ""
         }
       }).filter(Boolean).join("\n")
-      sessionInputs.set(input.sessionID, promptText)
       if (!sessionSpan) {
-        handleRunStarted(
-          input.sessionID,
-          agent,
-          promptText,
-          input.model ? `${input.model.providerID}/${input.model.modelID}` : "unknown",
-          startTime,
-          ctx,
-        )
+        const model = input.model ? `${input.model.providerID}/${input.model.modelID}` : "unknown"
+        if (input.messageID) {
+          handleRunStarted(
+            input.messageID,
+            input.sessionID,
+            agent,
+            promptText,
+            model,
+            startTime,
+            ctx,
+          )
+        } else {
+          setBoundedMap(pendingRuns, input.sessionID, {
+            agent,
+            promptText,
+            model,
+            startTime,
+          })
+        }
       }
       const promptLength = promptText.length
       emitLog({
@@ -280,10 +294,26 @@ export const OtelPlugin: Plugin = async ({ project, client, directory, worktree 
         case "message.updated": {
           const msgEvt = event as EventMessageUpdated
           const info = msgEvt.properties.info
+          if (info.role === "user") {
+            const pendingRun = pendingRuns.get(info.sessionID)
+            if (!sessionSpans.has(info.sessionID) && (pendingRun || activeRuns.get(info.sessionID) !== info.id)) {
+              handleRunStarted(
+                info.id,
+                info.sessionID,
+                pendingRun?.agent ?? info.agent,
+                pendingRun?.promptText ?? "",
+                pendingRun?.model ?? `${info.model.providerID}/${info.model.modelID}`,
+                pendingRun?.startTime ?? info.time.created,
+                ctx,
+              )
+            }
+            break
+          }
           if (info.role === "assistant" && !info.time?.completed) {
             startMessageSpan(
               info.sessionID,
               info.id,
+              info.parentID,
               info.modelID ?? "unknown",
               info.providerID ?? "unknown",
               info.time?.created ?? Date.now(),

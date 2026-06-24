@@ -67,6 +67,14 @@ export type SessionTotals = {
   agentType: SessionAgentType
 }
 
+/** Pending root-run metadata captured from `chat.message` until the user message ID is known. */
+export type PendingRun = {
+  agent: string
+  promptText: string
+  model: string
+  startTime: number
+}
+
 /** Shared context threaded through every event handler. */
 export type HandlerContext = {
   log: PluginLogger
@@ -84,10 +92,12 @@ export type HandlerContext = {
   rootContext: () => Context
   runSpans: Map<string, Span>
   runSpanContexts: Map<string, SpanContext>
-  sessionRunRoots: Map<string, string>
+  activeRuns: Map<string, string>
+  assistantRuns: Map<string, string>
+  pendingRuns: Map<string, PendingRun>
+  runInputs: Map<string, string>
   sessionSpans: Map<string, Span>
   sessionSpanContexts: Map<string, SpanContext>
   messageSpans: Map<string, Span>
-  sessionInputs: Map<string, string>
   messageOutputs: Map<string, string>
 }

@@ -24,7 +24,9 @@ import type { HandlerContext, SessionAgentType } from "../types.ts"
 
 const OPENINFERENCE_SPAN_KIND = SemanticConventions.OPENINFERENCE_SPAN_KIND
 
+/** Starts or refreshes the root run span for a single user turn, keyed by the user message ID. */
 export function handleRunStarted(
+  runID: string,
   sessionID: string,
   agent: string,
   promptText: string,
@@ -32,8 +34,11 @@ export function handleRunStarted(
   startTime: number,
   ctx: HandlerContext,
 ) {
+  ctx.activeRuns.set(sessionID, runID)
+  ctx.pendingRuns.delete(sessionID)
+  if (promptText) setBoundedMap(ctx.runInputs, runID, promptText)
   if (!isTraceEnabled("session", ctx)) return
-  const existing = ctx.runSpans.get(sessionID)
+  const existing = ctx.runSpans.get(runID)
   if (existing) {
     existing.setAttributes({
       [AGENT_NAME]: agent,
@@ -72,9 +77,8 @@ export function handleRunStarted(
     },
     ctx.rootContext(),
   )
-  setBoundedMap(ctx.runSpans, sessionID, runSpan)
-  setBoundedMap(ctx.runSpanContexts, sessionID, runSpan.spanContext())
-  setBoundedMap(ctx.sessionRunRoots, sessionID, sessionID)
+  ctx.runSpans.set(runID, runSpan)
+  setBoundedMap(ctx.runSpanContexts, runID, runSpan.spanContext())
 }
 
 /** Increments the session counter, records start time, starts the root session span, and emits a `session.created` log event. */
@@ -89,8 +93,6 @@ export function handleSessionCreated(e: EventSessionCreated, ctx: HandlerContext
   setBoundedMap(ctx.sessionTotals, sessionID, { startMs: createdAt, tokens: 0, cost: 0, messages: 0, agent: "unknown", agentType })
 
   if (isTraceEnabled("session", ctx) && parentID) {
-    const runRootID = ctx.sessionRunRoots.get(parentID) ?? parentID
-    setBoundedMap(ctx.sessionRunRoots, sessionID, runRootID)
     const sessionSpan = ctx.tracer.startSpan(
       `${ctx.tracePrefix}session`,
       {
@@ -106,7 +108,7 @@ export function handleSessionCreated(e: EventSessionCreated, ctx: HandlerContext
       },
       resolveSessionTraceContext(parentID, ctx),
     )
-    setBoundedMap(ctx.sessionSpans, sessionID, sessionSpan)
+    ctx.sessionSpans.set(sessionID, sessionSpan)
     setBoundedMap(ctx.sessionSpanContexts, sessionID, sessionSpan.spanContext())
   }
 
@@ -138,7 +140,7 @@ function sweepSession(sessionID: string, ctx: HandlerContext) {
       ctx.pendingToolSpans.delete(key)
     }
   }
-  ctx.sessionInputs.delete(sessionID)
+  ctx.pendingRuns.delete(sessionID)
   const msgPrefix = `${sessionID}:`
   for (const [key, span] of ctx.messageSpans) {
     if (key.startsWith(msgPrefix)) {
@@ -192,7 +194,9 @@ export function handleSessionIdle(e: EventSessionIdle, ctx: HandlerContext) {
     sessionSpan.end()
     ctx.sessionSpans.delete(sessionID)
   }
-  const runSpan = ctx.runSpans.get(sessionID)
+  const runID = ctx.activeRuns.get(sessionID)
+  if (runID) ctx.activeRuns.delete(sessionID)
+  const runSpan = runID ? ctx.runSpans.get(runID) : undefined
   if (runSpan) {
     if (totals) {
       runSpan.setAttributes({
@@ -205,7 +209,7 @@ export function handleSessionIdle(e: EventSessionIdle, ctx: HandlerContext) {
     }
     runSpan.setStatus({ code: SpanStatusCode.OK })
     runSpan.end()
-    ctx.runSpans.delete(sessionID)
+    ctx.runSpans.delete(runID!)
   }
 
   ctx.emitLog({
@@ -252,13 +256,15 @@ export function handleSessionError(e: EventSessionError, ctx: HandlerContext) {
       sessionSpan.end()
       ctx.sessionSpans.delete(rawID)
     }
-    const runSpan = ctx.runSpans.get(rawID)
+    const runID = ctx.activeRuns.get(rawID)
+    if (runID) ctx.activeRuns.delete(rawID)
+    const runSpan = runID ? ctx.runSpans.get(runID) : undefined
     if (runSpan) {
       if (totals) runSpan.setAttributes({ [AGENT_NAME]: totals.agent, "agent.type": totals.agentType })
       runSpan.setStatus({ code: SpanStatusCode.ERROR, message: error })
       runSpan.setAttribute("error", error)
       runSpan.end()
-      ctx.runSpans.delete(rawID)
+      ctx.runSpans.delete(runID!)
     }
   }
 

@@ -86,7 +86,13 @@ function makeSpan(
   startTime?: number,
   parentSpan?: SpySpan,
   parentSpanContext?: SpanContext,
+  ownSpanContext?: SpanContext,
 ): SpySpan {
+  const context = ownSpanContext ?? {
+    traceId: "00000000000000000000000000000001",
+    spanId: "0000000000000001",
+    traceFlags: 1,
+  }
   const span: SpySpan = {
     name,
     startTime,
@@ -101,7 +107,7 @@ function makeSpan(
     setAttributes(attrs) { Object.assign(span.attributes, attrs); return span },
     end(t) { span.ended = true; span.endTime = t },
     isRecording() { return !span.ended },
-    spanContext() { return { traceId: "00000000000000000000000000000001", spanId: "0000000000000001", traceFlags: 1 } },
+    spanContext() { return context },
     addEvent() { return span },
     recordException() { return span },
     updateName(n) { span.name = n; return span },
@@ -110,16 +116,24 @@ function makeSpan(
 }
 
 export function makeTracer(): SpyTracer {
+  let nextSpanID = 1
   const tracer: SpyTracer = {
     spans: [],
     startSpan(name, options, ctx) {
       const parentFromCtx = ctx ? trace.getSpan(ctx) as SpySpan | undefined : undefined
       const parentSpanContext = ctx ? trace.getSpanContext(ctx) ?? undefined : undefined
+      const ownSpanContext: SpanContext = {
+        traceId: parentSpanContext?.traceId ?? "00000000000000000000000000000001",
+        spanId: (nextSpanID++).toString(16).padStart(16, "0"),
+        traceFlags: parentSpanContext?.traceFlags ?? 1,
+        ...(parentSpanContext?.traceState ? { traceState: parentSpanContext.traceState } : {}),
+      }
       const span = makeSpan(
         name,
         typeof options?.startTime === "number" ? options.startTime : undefined,
         parentFromCtx,
         parentSpanContext,
+        ownSpanContext,
       )
       if (options?.attributes) Object.assign(span.attributes, options.attributes)
       tracer.spans.push(span)
@@ -220,11 +234,13 @@ export function makeCtx(
     rootContext: () => ROOT_CONTEXT,
     runSpans: new Map(),
     runSpanContexts: new Map(),
-    sessionRunRoots: new Map(),
+    activeRuns: new Map(),
+    assistantRuns: new Map(),
+    pendingRuns: new Map(),
+    runInputs: new Map(),
     sessionSpans: new Map(),
     sessionSpanContexts: new Map(),
     messageSpans: new Map(),
-    sessionInputs: new Map(),
     messageOutputs: new Map(),
   }
 
