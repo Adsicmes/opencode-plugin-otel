@@ -1,4 +1,4 @@
-import type { Counter, Gauge, Histogram, Span, Tracer } from "@opentelemetry/api"
+import type { Context, Counter, Gauge, Histogram, Span, SpanContext, Tracer } from "@opentelemetry/api"
 import type { LogRecord } from "@opentelemetry/api-logs"
 
 /** Numeric priority map for log levels; higher value = higher severity. */
@@ -17,8 +17,8 @@ export type PluginLogger = (
   extra?: Record<string, unknown>,
 ) => Promise<void>
 
-/** OTel resource attributes common to every emitted log and metric. */
-export type CommonAttrs = { readonly "project.id": string }
+/** OTel attributes common to every emitted span, log, and metric. */
+export type CommonAttrs = Readonly<Record<string, string>>
 
 /** In-flight tool execution tracked between `running` and `completed`/`error` part updates. */
 export type PendingToolSpan = {
@@ -54,6 +54,9 @@ export type Instruments = {
   subtaskCounter: Counter
 }
 
+/** Session role emitted by opencode: either the primary/root agent or a spawned subagent. */
+export type SessionAgentType = "primary" | "subagent"
+
 /** Accumulated per-session totals used for gauge snapshots on session.idle. */
 export type SessionTotals = {
   startMs: number
@@ -61,6 +64,15 @@ export type SessionTotals = {
   cost: number
   messages: number
   agent: string
+  agentType: SessionAgentType
+}
+
+/** Pending root-run metadata captured from `chat.message` until the user message ID is known. */
+export type PendingRun = {
+  agent: string
+  promptText: string
+  model: string
+  startTime: number
 }
 
 /** Shared context threaded through every event handler. */
@@ -77,8 +89,15 @@ export type HandlerContext = {
   disabledTraces: Set<string>
   tracer: Tracer
   tracePrefix: string
+  rootContext: () => Context
+  runSpans: Map<string, Span>
+  runSpanContexts: Map<string, SpanContext>
+  activeRuns: Map<string, string>
+  assistantRuns: Map<string, string>
+  pendingRuns: Map<string, PendingRun>
+  runInputs: Map<string, string>
   sessionSpans: Map<string, Span>
+  sessionSpanContexts: Map<string, SpanContext>
   messageSpans: Map<string, Span>
-  sessionInputs: Map<string, string>
   messageOutputs: Map<string, string>
 }

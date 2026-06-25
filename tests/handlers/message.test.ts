@@ -125,7 +125,7 @@ describe("handleMessageUpdated", () => {
   })
 
   test("increments all token counters", async () => {
-    const { ctx, counters } = makeCtx()
+    const { ctx, counters } = makeCtx("proj_test", [], [], true, { team: "platform" })
     await handleMessageUpdated(
       makeAssistantMessageUpdated({
         tokens: { input: 100, output: 50, reasoning: 10, cache: { read: 20, write: 5 } },
@@ -140,6 +140,7 @@ describe("handleMessageUpdated", () => {
     expect(types).toContain("cacheCreation")
     const inputCall = counters.token.calls.find((c) => c.attrs["type"] === "input")!
     expect(inputCall.value).toBe(100)
+    expect(inputCall.attrs["team"]).toBe("platform")
   })
 
   test("increments cost counter", async () => {
@@ -194,7 +195,7 @@ describe("handleMessageUpdated", () => {
 
   test("accumulates session totals including cache tokens", async () => {
     const { ctx } = makeCtx()
-    ctx.sessionTotals.set("ses_1", { startMs: 0, tokens: 0, cost: 0, messages: 0, agent: "build" })
+    ctx.sessionTotals.set("ses_1", { startMs: 0, tokens: 0, cost: 0, messages: 0, agent: "build", agentType: "primary" })
     await handleMessageUpdated(
       makeAssistantMessageUpdated({
         sessionID: "ses_1",
@@ -210,10 +211,11 @@ describe("handleMessageUpdated", () => {
   })
 
   test("emits api_request log record on success", async () => {
-    const { ctx, logger } = makeCtx()
+    const { ctx, logger } = makeCtx("proj_test", [], [], true, { team: "platform" })
     await handleMessageUpdated(makeAssistantMessageUpdated({}), ctx)
     expect(logger.records).toHaveLength(1)
     expect(logger.records.at(0)!.body).toBe("api_request")
+    expect(logger.records.at(0)!.attributes?.["team"]).toBe("platform")
   })
 
   test("emits api_error log record on error", async () => {
@@ -274,12 +276,15 @@ describe("handleMessagePartUpdated", () => {
 
   test("emits tool_result log on success with exact byte length", async () => {
     const { ctx, logger } = makeCtx()
+    ctx.sessionTotals.set("ses_1", { startMs: 0, tokens: 0, cost: 0, messages: 0, agent: "build", agentType: "primary" })
     await handleMessagePartUpdated(makeToolPartUpdated("running"), ctx)
     await handleMessagePartUpdated(makeToolPartUpdated("completed"), ctx)
     const record = logger.records.at(0)!
     expect(record.body).toBe("tool_result")
     expect(record.attributes?.["success"]).toBe(true)
     expect(record.attributes?.["tool_result_size_bytes"]).toBe(Buffer.byteLength("result output", "utf8"))
+    expect(record.attributes?.["agent.name"]).toBe("build")
+    expect(record.attributes?.["agent.type"]).toBe("primary")
   })
 
   test("emits error-severity log on tool error", async () => {
@@ -323,7 +328,7 @@ describe("handleMessagePartUpdated", () => {
 describe("handleMessageUpdated — agent attribute", () => {
   test("includes agent attr on token counters from session totals", async () => {
     const { ctx, counters } = makeCtx()
-    ctx.sessionTotals.set("ses_1", { startMs: 0, tokens: 0, cost: 0, messages: 0, agent: "plan" })
+    ctx.sessionTotals.set("ses_1", { startMs: 0, tokens: 0, cost: 0, messages: 0, agent: "plan", agentType: "primary" })
     await handleMessageUpdated(makeAssistantMessageUpdated({ sessionID: "ses_1" }), ctx)
     const inputCall = counters.token.calls.find((c) => c.attrs["type"] === "input")!
     expect(inputCall.attrs["agent"]).toBe("plan")
@@ -331,28 +336,28 @@ describe("handleMessageUpdated — agent attribute", () => {
 
   test("includes agent attr on cost counter", async () => {
     const { ctx, counters } = makeCtx()
-    ctx.sessionTotals.set("ses_1", { startMs: 0, tokens: 0, cost: 0, messages: 0, agent: "build" })
+    ctx.sessionTotals.set("ses_1", { startMs: 0, tokens: 0, cost: 0, messages: 0, agent: "build", agentType: "primary" })
     await handleMessageUpdated(makeAssistantMessageUpdated({ sessionID: "ses_1" }), ctx)
     expect(counters.cost.calls.at(0)!.attrs["agent"]).toBe("build")
   })
 
   test("includes agent attr on message counter", async () => {
     const { ctx, counters } = makeCtx()
-    ctx.sessionTotals.set("ses_1", { startMs: 0, tokens: 0, cost: 0, messages: 0, agent: "general" })
+    ctx.sessionTotals.set("ses_1", { startMs: 0, tokens: 0, cost: 0, messages: 0, agent: "general", agentType: "primary" })
     await handleMessageUpdated(makeAssistantMessageUpdated({ sessionID: "ses_1" }), ctx)
     expect(counters.message.calls.at(0)!.attrs["agent"]).toBe("general")
   })
 
   test("includes agent attr on model usage counter", async () => {
     const { ctx, counters } = makeCtx()
-    ctx.sessionTotals.set("ses_1", { startMs: 0, tokens: 0, cost: 0, messages: 0, agent: "review" })
+    ctx.sessionTotals.set("ses_1", { startMs: 0, tokens: 0, cost: 0, messages: 0, agent: "review", agentType: "primary" })
     await handleMessageUpdated(makeAssistantMessageUpdated({ sessionID: "ses_1" }), ctx)
     expect(counters.modelUsage.calls.at(0)!.attrs["agent"]).toBe("review")
   })
 
   test("includes agent attr on cache counters", async () => {
     const { ctx, counters } = makeCtx()
-    ctx.sessionTotals.set("ses_1", { startMs: 0, tokens: 0, cost: 0, messages: 0, agent: "tdd" })
+    ctx.sessionTotals.set("ses_1", { startMs: 0, tokens: 0, cost: 0, messages: 0, agent: "tdd", agentType: "primary" })
     await handleMessageUpdated(
       makeAssistantMessageUpdated({ sessionID: "ses_1", tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 10, write: 5 } } }),
       ctx,
@@ -369,19 +374,22 @@ describe("handleMessageUpdated — agent attribute", () => {
 
   test("includes agent on api_request log record", async () => {
     const { ctx, logger } = makeCtx()
-    ctx.sessionTotals.set("ses_1", { startMs: 0, tokens: 0, cost: 0, messages: 0, agent: "plan" })
+    ctx.sessionTotals.set("ses_1", { startMs: 0, tokens: 0, cost: 0, messages: 0, agent: "plan", agentType: "primary" })
     await handleMessageUpdated(makeAssistantMessageUpdated({ sessionID: "ses_1" }), ctx)
     expect(logger.records.at(0)!.attributes?.["agent"]).toBe("plan")
+    expect(logger.records.at(0)!.attributes?.["agent.name"]).toBe("plan")
+    expect(logger.records.at(0)!.attributes?.["agent.type"]).toBe("primary")
   })
 
   test("includes agent on api_error log record", async () => {
     const { ctx, logger } = makeCtx()
-    ctx.sessionTotals.set("ses_1", { startMs: 0, tokens: 0, cost: 0, messages: 0, agent: "build" })
+    ctx.sessionTotals.set("ses_1", { startMs: 0, tokens: 0, cost: 0, messages: 0, agent: "build", agentType: "primary" })
     await handleMessageUpdated(
       makeAssistantMessageUpdated({ sessionID: "ses_1", error: { name: "APIError" } }),
       ctx,
     )
     expect(logger.records.at(0)!.attributes?.["agent"]).toBe("build")
+    expect(logger.records.at(0)!.attributes?.["agent.type"]).toBe("primary")
   })
 })
 
@@ -406,6 +414,8 @@ describe("handleMessagePartUpdated — subtask parts", () => {
     const record = logger.records.at(0)!
     expect(record.body).toBe("subtask_invoked")
     expect(record.attributes?.["agent"]).toBe("plan")
+    expect(record.attributes?.["agent.name"]).toBe("plan")
+    expect(record.attributes?.["agent.type"]).toBe("subagent")
     expect(record.attributes?.["description"]).toBe("Plan the feature")
     expect(record.attributes?.["prompt_length"]).toBe("Create a plan".length)
   })

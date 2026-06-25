@@ -6,6 +6,33 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [1.2.0](https://github.com/DEVtheOPS/opencode-plugin-otel/compare/v1.1.0...v1.2.0) (2026-06-20)
+
+
+### Features
+
+* **config:** support OPENCODE_SPAN_ATTRIBUTES ([93866c5](https://github.com/DEVtheOPS/opencode-plugin-otel/commit/93866c5b09788f3a3f1b9162be0ed028196c4e83))
+* **handlers:** add agent metadata to logs and spans ([c2759e9](https://github.com/DEVtheOPS/opencode-plugin-otel/commit/c2759e97401f1460ab8143cb04f2d0fb2fb05e29))
+
+
+### Bug Fixes
+
+* **config:** preserve canonical project.id ([0d02eac](https://github.com/DEVtheOPS/opencode-plugin-otel/commit/0d02eac390e307fd71cc270c63711f026815667b))
+
+## [1.1.0](https://github.com/DEVtheOPS/opencode-plugin-otel/compare/v1.0.0...v1.1.0) (2026-06-04)
+
+
+### Features
+
+* **trace:** support remote W3C parent context ([1da0a85](https://github.com/DEVtheOPS/opencode-plugin-otel/commit/1da0a857e9303a8f7020f20627d01fecb95cfad0))
+* **trace:** support remote W3C parent context ([83e3d42](https://github.com/DEVtheOPS/opencode-plugin-otel/commit/83e3d4211400eb49520c7b58bcaeff262763e799))
+
+
+### Bug Fixes
+
+* added protobuf exporters from [@opentelemetry](https://github.com/opentelemetry) ([19e600f](https://github.com/DEVtheOPS/opencode-plugin-otel/commit/19e600f31c3e70cf21d6ec5c145aad67edbd022f))
+* **probe:** reject scheme-less endpoint URLs ([df7a62b](https://github.com/DEVtheOPS/opencode-plugin-otel/commit/df7a62b3cd801f753d4a03342fc178fb4aac2874))
+
 ## [1.0.0](https://github.com/DEVtheOPS/opencode-plugin-otel/compare/v0.9.0...v1.0.0) (2026-05-18)
 
 

@@ -16,6 +16,7 @@ import { resourceFromAttributes } from "@opentelemetry/resources"
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions"
 import { ATTR_HOST_ARCH } from "@opentelemetry/semantic-conventions/incubating"
 import type { Instruments } from "./types.ts"
+import { parseAttributePairs } from "./config.ts"
 import {
   createGrpcMetadata,
   DynamicHeaders,
@@ -37,17 +38,7 @@ export function buildResource(version: string) {
     "app.version": version,
     "os.type": process.platform,
     [ATTR_HOST_ARCH]: process.arch,
-  }
-  const raw = process.env["OTEL_RESOURCE_ATTRIBUTES"]
-  if (raw) {
-    for (const pair of raw.split(",")) {
-      const idx = pair.indexOf("=")
-      if (idx > 0) {
-        const key = pair.slice(0, idx).trim()
-        const val = pair.slice(idx + 1).trim()
-        if (key) attrs[key] = val
-      }
-    }
+    ...parseAttributePairs(process.env["OTEL_RESOURCE_ATTRIBUTES"]),
   }
   return resourceFromAttributes(attrs)
 }

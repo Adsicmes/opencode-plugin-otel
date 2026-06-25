@@ -1,8 +1,11 @@
 import { describe, test, expect, afterEach } from "bun:test"
+import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-grpc"
 import { OTLPLogExporter as OTLPHttpLogExporter } from "@opentelemetry/exporter-logs-otlp-http"
 import { OTLPLogExporter as OTLPProtoLogExporter } from "@opentelemetry/exporter-logs-otlp-proto"
+import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-grpc"
 import { OTLPMetricExporter as OTLPHttpMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http"
 import { OTLPMetricExporter as OTLPProtoMetricExporter } from "@opentelemetry/exporter-metrics-otlp-proto"
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-grpc"
 import { OTLPTraceExporter as OTLPHttpTraceExporter } from "@opentelemetry/exporter-trace-otlp-http"
 import { OTLPTraceExporter as OTLPProtoTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto"
 import { buildResource, setupOtel, type OtelProviders } from "../src/otel.ts"
@@ -68,6 +71,12 @@ describe("buildResource", () => {
     expect(resource.attributes["team"]).toBe("platform")
   })
 
+  test("resource attribute values may contain equals signs", () => {
+    process.env["OTEL_RESOURCE_ATTRIBUTES"] = "auth=Bearer abc=123"
+    const resource = buildResource("0.0.1")
+    expect(resource.attributes["auth"]).toBe("Bearer abc=123")
+  })
+
   test("env resource attributes override defaults", () => {
     process.env["OTEL_RESOURCE_ATTRIBUTES"] = "service.name=my-override"
     const resource = buildResource("0.0.1")
@@ -94,6 +103,15 @@ describe("setupOtel", () => {
     expect(exporters.metric).toBeInstanceOf(OTLPProtoMetricExporter)
     expect(exporters.log).toBeInstanceOf(OTLPProtoLogExporter)
     expect(exporters.trace).toBeInstanceOf(OTLPProtoTraceExporter)
+  })
+
+  test("uses gRPC exporters for grpc", async () => {
+    providers = await setupOtel("http://collector:4317", "grpc", 60000, 5000, "1.2.3")
+    const exporters = exportersOf(providers)
+
+    expect(exporters.metric).toBeInstanceOf(OTLPMetricExporter)
+    expect(exporters.log).toBeInstanceOf(OTLPLogExporter)
+    expect(exporters.trace).toBeInstanceOf(OTLPTraceExporter)
   })
 
   test("uses JSON HTTP exporters for http/json", async () => {
