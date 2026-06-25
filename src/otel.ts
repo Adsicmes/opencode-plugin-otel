@@ -187,6 +187,9 @@ export function createInstruments(prefix: string): Instruments {
     sessionCostGauge: meter.createHistogram(`${prefix}session.cost.total`, {
       unit: "USD",
       description: "Total cost per session in USD, recorded as a histogram on session idle",
+      advice: {
+        explicitBucketBoundaries: [0.01, 0.05, 0.10, 0.25, 0.50, 1.00, 2.50, 5.00, 10.00, 25.00],
+      },
     }),
     modelUsageCounter: meter.createCounter(`${prefix}model.usage`, {
       unit: "{request}",
