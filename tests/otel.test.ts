@@ -8,7 +8,7 @@ import { OTLPMetricExporter as OTLPProtoMetricExporter } from "@opentelemetry/ex
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-grpc"
 import { OTLPTraceExporter as OTLPHttpTraceExporter } from "@opentelemetry/exporter-trace-otlp-http"
 import { OTLPTraceExporter as OTLPProtoTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto"
-import { buildResource, setupOtel, type OtelProviders } from "../src/otel.ts"
+import { buildResource, forceFlushOtel, setupOtel, type OtelProviders } from "../src/otel.ts"
 
 let providers: OtelProviders | undefined
 
@@ -121,5 +121,20 @@ describe("setupOtel", () => {
     expect(exporters.metric).toBeInstanceOf(OTLPHttpMetricExporter)
     expect(exporters.log).toBeInstanceOf(OTLPHttpLogExporter)
     expect(exporters.trace).toBeInstanceOf(OTLPHttpTraceExporter)
+  })
+})
+
+describe("forceFlushOtel", () => {
+  test("flushes metrics, logs, and traces", async () => {
+    const calls: string[] = []
+    const fakeProviders = {
+      meterProvider: { forceFlush: async () => { calls.push("metrics") } },
+      loggerProvider: { forceFlush: async () => { calls.push("logs") } },
+      tracerProvider: { forceFlush: async () => { calls.push("traces") } },
+    } as unknown as OtelProviders
+
+    await forceFlushOtel(fakeProviders)
+
+    expect(calls.sort()).toEqual(["logs", "metrics", "traces"])
   })
 })
