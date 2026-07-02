@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [1.2.2](https://github.com/DEVtheOPS/opencode-plugin-otel/compare/v1.2.1...v1.2.2) (2026-07-02)
+
+
+### Bug Fixes
+
+* flush telemetry for short-lived runs ([df37dd0](https://github.com/DEVtheOPS/opencode-plugin-otel/commit/df37dd053b8386b95f1fba7a2042f4a83fce0539))
+
 ## [1.2.1](https://github.com/DEVtheOPS/opencode-plugin-otel/compare/v1.2.0...v1.2.1) (2026-06-25)
 
 
