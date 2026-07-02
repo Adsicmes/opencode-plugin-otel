@@ -50,6 +50,14 @@ export type OtelProviders = {
   tracerProvider: BasicTracerProvider
 }
 
+export async function forceFlushOtel(providers: OtelProviders) {
+  await Promise.allSettled([
+    providers.meterProvider.forceFlush(),
+    providers.loggerProvider.forceFlush(),
+    providers.tracerProvider.forceFlush(),
+  ])
+}
+
 export function buildHttpSignalUrl(endpoint: string, signal: "traces" | "metrics" | "logs") {
   const url = new URL(endpoint)
   const normalizedPath = url.pathname.endsWith("/") ? url.pathname.slice(0, -1) : url.pathname

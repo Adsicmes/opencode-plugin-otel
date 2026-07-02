@@ -19,7 +19,7 @@ import type {
 import { LEVELS, type Level, type HandlerContext } from "./types.ts"
 import { loadConfig, parseAttributePairs, resolveHelperPath, resolveLogLevel } from "./config.ts"
 import { probeEndpoint } from "./probe.ts"
-import { setupOtel, createInstruments } from "./otel.ts"
+import { setupOtel, createInstruments, forceFlushOtel } from "./otel.ts"
 import { remoteParentContext } from "./trace-context.ts"
 import { handleSessionCreated, handleSessionIdle, handleSessionError, handleSessionStatus, handleRunStarted } from "./handlers/session.ts"
 import { handleMessageUpdated, handleMessagePartUpdated, startMessageSpan } from "./handlers/message.ts"
@@ -77,7 +77,7 @@ export const OtelPlugin: Plugin = async ({ project, client, directory, worktree 
     })
   }
 
-  const { meterProvider, loggerProvider, tracerProvider } = await setupOtel(
+  const providers = await setupOtel(
     config.endpoint,
     config.protocol,
     config.metricsInterval,
@@ -86,6 +86,7 @@ export const OtelPlugin: Plugin = async ({ project, client, directory, worktree 
     config.otlpHeaders,
     otlpHeadersHelper,
   )
+  const { meterProvider, loggerProvider, tracerProvider } = providers
   await log("info", "OTel SDK initialized")
 
   const instruments = createInstruments(config.metricPrefix)
@@ -158,7 +159,18 @@ export const OtelPlugin: Plugin = async ({ project, client, directory, worktree 
     messageOutputs,
   }
 
+  let shuttingDown = false
+
+  async function flushTelemetry(reason: string) {
+    if (shuttingDown) return
+    await forceFlushOtel(providers)
+    await log("debug", "otel: telemetry flushed", { reason })
+  }
+
   async function shutdown() {
+    if (shuttingDown) return
+    shuttingDown = true
+    await forceFlushOtel(providers)
     await Promise.allSettled([meterProvider.shutdown(), loggerProvider.shutdown(), tracerProvider.shutdown()])
   }
 
@@ -272,9 +284,11 @@ export const OtelPlugin: Plugin = async ({ project, client, directory, worktree 
           break
         case "session.idle":
           handleSessionIdle(event as EventSessionIdle, ctx)
+          await flushTelemetry("session.idle")
           break
         case "session.error":
           handleSessionError(event as EventSessionError, ctx)
+          await flushTelemetry("session.error")
           break
         case "session.status":
           handleSessionStatus(event as EventSessionStatus, ctx)
@@ -321,6 +335,9 @@ export const OtelPlugin: Plugin = async ({ project, client, directory, worktree 
             )
           }
           await handleMessageUpdated(msgEvt, ctx)
+          if (info.role === "assistant" && info.time?.completed) {
+            await flushTelemetry("message.completed")
+          }
           break
         }
         case "message.part.updated":
