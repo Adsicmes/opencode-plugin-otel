@@ -47,6 +47,7 @@ src/
 - **All env vars are `OPENCODE_` prefixed** — `OPENCODE_ENABLE_TELEMETRY`, `OPENCODE_OTLP_ENDPOINT`, `OPENCODE_OTLP_METRICS_INTERVAL`, `OPENCODE_OTLP_LOGS_INTERVAL`, `OPENCODE_METRIC_PREFIX`, `OPENCODE_OTLP_HEADERS`, `OPENCODE_RESOURCE_ATTRIBUTES`, `OPENCODE_SPAN_ATTRIBUTES`. Never use bare `OTEL_*` names for plugin config. `loadConfig` copies `OPENCODE_OTLP_HEADERS` → `OTEL_EXPORTER_OTLP_HEADERS` and `OPENCODE_RESOURCE_ATTRIBUTES` → `OTEL_RESOURCE_ATTRIBUTES` before the SDK initializes.
 - **`OPENCODE_ENABLE_TELEMETRY`** — all OTel instrumentation is gated on this env var. The plugin always loads regardless; only telemetry is disabled when unset.
 - **`OPENCODE_METRIC_PREFIX`** — defaults to `opencode.`; set to `claude_code.` for Claude Code dashboard compatibility.
+- **Plugin options** — `loadConfig` also accepts an `OtelPluginOptions` object passed via opencode's plugin tuple form (`["opencode-plugin-otel", { ... }]`, threaded through `OtelPlugin`'s second argument). Precedence is option → `OPENCODE_*` env → default. Keep option keys 1:1 with `PluginConfig` field names.
 
 ## Commit message format
 

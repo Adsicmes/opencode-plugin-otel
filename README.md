@@ -14,6 +14,7 @@ An [opencode](https://opencode.ai) plugin that exports telemetry via OpenTelemet
   - [Log events](#log-events)
 - [Installation](#installation)
 - [Configuration](#configuration)
+  - [Plugin options (opencode.json)](#plugin-options-opencodejson)
   - [Quick start](#quick-start)
   - [Headers and resource attributes](#headers-and-resource-attributes)
   - [Dynamic headers](#dynamic-headers)
@@ -84,7 +85,9 @@ Or point directly at a local checkout for development:
 
 ## Configuration
 
-All configuration is via environment variables. Set them in your shell profile (`~/.zshrc`, `~/.bashrc`, etc.).
+The plugin reads its settings from `OPENCODE_*` environment variables and/or from inline [plugin options](#plugin-options-opencodejson) in `opencode.json`. When both are present, an option wins over the matching environment variable, which wins over the built-in default.
+
+The environment variables (set them in your shell profile — `~/.zshrc`, `~/.bashrc`, etc.):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -104,6 +107,49 @@ All configuration is via environment variables. Set them in your shell profile (
 | `OPENCODE_OTLP_METRICS_TEMPORALITY` | *(unset)* | Metrics aggregation temporality: `delta`, `cumulative`, or `lowmemory`. Required for Datadog (`delta`). Copied to `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE`. |
 | `OPENCODE_TRACEPARENT` | *(unset)* | W3C [`traceparent`](https://www.w3.org/TR/trace-context/#traceparent-header) string. When set, all spans are parented under this remote context so opencode traces nest inside a caller's trace (e.g. a CI job). Invalid values are logged and ignored. Note: with the default `ParentBased` sampler, a value with the sampled flag off (`...-00`) suppresses all trace export. |
 | `OPENCODE_TRACESTATE` | *(unset)* | W3C [`tracestate`](https://www.w3.org/TR/trace-context/#tracestate-header) string, parsed alongside `OPENCODE_TRACEPARENT` and attached to the remote parent context. Ignored unless a valid `OPENCODE_TRACEPARENT` is also set. |
+
+### Plugin options (opencode.json)
+
+Every setting can also be passed inline through opencode's plugin **tuple form**, so nothing has to be exported in a shell. Options take precedence over the matching `OPENCODE_*` environment variable, which in turn wins over the built-in default.
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [
+    ["@devtheops/opencode-plugin-otel", {
+      "enabled": true,
+      "endpoint": "http://localhost:4317",
+      "protocol": "grpc",
+      "metricPrefix": "claude_code.",
+      "resourceAttributes": "service.version=1.2.3,deployment.environment=production",
+      "disabledTraces": ["tool"]
+    }]
+  ]
+}
+```
+
+Option keys mirror the resolved config and map to the environment variables:
+
+| Option | Environment variable |
+|--------|----------------------|
+| `enabled` | `OPENCODE_ENABLE_TELEMETRY` |
+| `logsEnabled` | `OPENCODE_DISABLE_LOGS` (inverted) |
+| `endpoint` | `OPENCODE_OTLP_ENDPOINT` |
+| `protocol` | `OPENCODE_OTLP_PROTOCOL` |
+| `metricsInterval` | `OPENCODE_OTLP_METRICS_INTERVAL` |
+| `logsInterval` | `OPENCODE_OTLP_LOGS_INTERVAL` |
+| `metricPrefix` | `OPENCODE_METRIC_PREFIX` |
+| `otlpHeaders` | `OPENCODE_OTLP_HEADERS` |
+| `otlpHeadersHelper` | `OPENCODE_OTLP_HEADERS_HELPER` |
+| `resourceAttributes` | `OPENCODE_RESOURCE_ATTRIBUTES` |
+| `spanAttributes` | `OPENCODE_SPAN_ATTRIBUTES` |
+| `traceparent` | `OPENCODE_TRACEPARENT` |
+| `tracestate` | `OPENCODE_TRACESTATE` |
+| `metricsTemporality` | `OPENCODE_OTLP_METRICS_TEMPORALITY` |
+| `disabledMetrics` | `OPENCODE_DISABLE_METRICS` (array, not a comma string) |
+| `disabledTraces` | `OPENCODE_DISABLE_TRACES` (array, not a comma string) |
+
+> **Security note:** `opencode.json` is frequently committed to version control. Keep secrets such as `otlpHeaders` in an environment variable or an opencode `{env:VAR}` substitution (e.g. `"otlpHeaders": "{env:OTEL_HEADERS}"`) rather than inline.
 
 ### Quick start
 

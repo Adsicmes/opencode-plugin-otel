@@ -17,7 +17,7 @@ import type {
   EventCommandExecuted,
 } from "@opencode-ai/sdk"
 import { LEVELS, type Level, type HandlerContext } from "./types.ts"
-import { loadConfig, parseAttributePairs, resolveHelperPath, resolveLogLevel } from "./config.ts"
+import { loadConfig, parseAttributePairs, resolveHelperPath, resolveLogLevel, type OtelPluginOptions } from "./config.ts"
 import { probeEndpoint } from "./probe.ts"
 import { setupOtel, createInstruments, forceFlushOtel } from "./otel.ts"
 import { remoteParentContext } from "./trace-context.ts"
@@ -35,8 +35,8 @@ const PLUGIN_VERSION: string = (pkg as { version?: string }).version ?? "unknown
  * Instruments metrics (sessions, tokens, cost, lines of code, commits, tool durations)
  * and structured log events. All instrumentation is gated on `OPENCODE_ENABLE_TELEMETRY`.
  */
-export const OtelPlugin: Plugin = async ({ project, client, directory, worktree }) => {
-  const config = loadConfig()
+export const OtelPlugin: Plugin = async ({ project, client, directory, worktree }, options) => {
+  const config = loadConfig(options as OtelPluginOptions)
   const otlpHeadersHelper = resolveHelperPath(config.otlpHeadersHelper, directory, worktree)
   let minLevel: Level = "info"
 
