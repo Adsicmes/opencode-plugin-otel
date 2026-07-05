@@ -10,7 +10,10 @@ permissions:
 jobs:
   codex:
     name: Review Pull Request
-    if: github.event.pull_request.draft == false
+    if: |
+      github.event.pull_request.draft == false &&
+      github.actor != 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     outputs:
       final_message: ${{ steps.run_codex.outputs.final-message }}
@@ -56,7 +59,9 @@ jobs:
   post_feedback:
     name: Post Codex Feedback
     needs: codex
-    if: needs.codex.outputs.final_message != ''
+    if: |
+      needs.codex.result == 'success' &&
+      needs.codex.outputs.final_message != ''
     runs-on: ubuntu-latest
     permissions:
       issues: write
@@ -69,9 +74,29 @@ jobs:
         with:
           github-token: ${{ github.token }}
           script: |
-            await github.rest.issues.createComment({
+            const marker = '<!-- codex-review-comment -->';
+            const body = `${marker}\n${process.env.CODEX_FINAL_MESSAGE}`;
+            const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.payload.pull_request.number,
-              body: process.env.CODEX_FINAL_MESSAGE,
             });
+            const existing = comments.find((comment) =>
+              comment.user.type === 'Bot' && comment.body?.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body,
+              });
+            }
