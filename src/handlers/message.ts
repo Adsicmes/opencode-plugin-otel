@@ -41,6 +41,7 @@ import type { HandlerContext } from "../types.ts"
 
 const OPENINFERENCE_SPAN_KIND = SemanticConventions.OPENINFERENCE_SPAN_KIND
 const LLM_FINISH_REASON = "llm.finish_reason"
+const REDACTED_CONTENT = "******"
 
 type SubtaskPart = {
   type: "subtask"
@@ -133,9 +134,9 @@ export function handleMessageUpdated(e: EventMessageUpdated, ctx: HandlerContext
       [LLM_COST_TOTAL]: assistant.cost,
       ...(outputText
         ? {
-            [OUTPUT_VALUE]: outputText,
+            [OUTPUT_VALUE]: REDACTED_CONTENT,
             [OUTPUT_MIME_TYPE]: MimeType.TEXT,
-            [LLM_OUTPUT_MESSAGES]: JSON.stringify([{ role: "assistant", content: outputText }]),
+            [LLM_OUTPUT_MESSAGES]: REDACTED_CONTENT,
           }
         : {}),
       cost_usd: assistant.cost,
@@ -444,9 +445,9 @@ export function startMessageSpan(
         [LLM_MODEL_NAME]: modelID,
         ...(inputText
           ? {
-              [INPUT_VALUE]: inputText,
+              [INPUT_VALUE]: REDACTED_CONTENT,
               [INPUT_MIME_TYPE]: MimeType.TEXT,
-              [LLM_INPUT_MESSAGES]: JSON.stringify([{ role: "user", content: inputText }]),
+              [LLM_INPUT_MESSAGES]: REDACTED_CONTENT,
             }
           : {}),
         ...ctx.commonAttrs,

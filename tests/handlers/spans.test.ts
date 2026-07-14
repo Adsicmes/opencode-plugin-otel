@@ -2,7 +2,10 @@ import { describe, test, expect } from "bun:test"
 import { context, SpanStatusCode, trace, TraceFlags } from "@opentelemetry/api"
 import {
   AGENT_NAME,
+  INPUT_VALUE,
+  LLM_INPUT_MESSAGES,
   LLM_MODEL_NAME,
+  LLM_OUTPUT_MESSAGES,
   LLM_PROVIDER,
   LLM_SYSTEM,
   LLM_TOKEN_COUNT_COMPLETION,
@@ -11,6 +14,7 @@ import {
   LLM_TOKEN_COUNT_PROMPT_DETAILS_CACHE_READ,
   LLM_TOKEN_COUNT_PROMPT_DETAILS_CACHE_WRITE,
   OpenInferenceSpanKind,
+  OUTPUT_VALUE,
   SemanticConventions,
   SESSION_ID,
   TOOL_NAME,
@@ -121,6 +125,13 @@ describe("session spans", () => {
     handleRunStarted("user_1", "ses_1", "build", "prompt", "anthropic/claude", 1000, ctx)
     expect(tracer.spans[0]!.attributes[OPENINFERENCE_SPAN_KIND]).toBe(OpenInferenceSpanKind.AGENT)
     expect(tracer.spans[0]!.attributes[AGENT_NAME]).toBe("build")
+  })
+
+  test("run span redacts prompt content attributes", () => {
+    const { ctx, tracer } = makeCtx()
+    handleRunStarted("user_1", "ses_1", "build", "private prompt", "anthropic/claude", 1000, ctx)
+    expect(tracer.spans[0]!.attributes[INPUT_VALUE]).toBe("******")
+    expect(tracer.spans[0]!.attributes[LLM_INPUT_MESSAGES]).toBe("******")
   })
 
   test("run span carries is_subagent=false for root session", () => {
@@ -414,6 +425,25 @@ describe("message (LLM) spans", () => {
     expect(span.attributes[LLM_TOKEN_COUNT_PROMPT_DETAILS_CACHE_WRITE]).toBe(5)
     expect(span.attributes[AGENT_NAME]).toBe("review")
     expect(span.attributes["agent.type"]).toBe("subagent")
+  })
+
+  test("LLM span redacts input and output content attributes", () => {
+    const { ctx, tracer } = makeCtx()
+    handleRunStarted("user_1", "ses_1", "build", "private prompt", "anthropic/claude", 900, ctx)
+    startMessageSpan("ses_1", "msg_1", "user_1", "claude", "anthropic", 1000, ctx)
+    handleMessagePartUpdated({
+      type: "message.part.updated",
+      properties: {
+        part: { type: "text", id: "part_1", sessionID: "ses_1", messageID: "msg_1", text: "private response" },
+      },
+    } as EventMessagePartUpdated, ctx)
+    handleMessageUpdated(makeAssistantMessageUpdated({ id: "msg_1", parentID: "user_1" }), ctx)
+
+    const span = tracer.spans[1]!
+    expect(span.attributes[INPUT_VALUE]).toBe("******")
+    expect(span.attributes[LLM_INPUT_MESSAGES]).toBe("******")
+    expect(span.attributes[OUTPUT_VALUE]).toBe("******")
+    expect(span.attributes[LLM_OUTPUT_MESSAGES]).toBe("******")
   })
 
   test("handleMessageUpdated no-ops span handling when no span exists for messageID", () => {

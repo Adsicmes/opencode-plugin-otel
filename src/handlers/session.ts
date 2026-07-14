@@ -23,6 +23,7 @@ import {
 import type { HandlerContext, SessionAgentType } from "../types.ts"
 
 const OPENINFERENCE_SPAN_KIND = SemanticConventions.OPENINFERENCE_SPAN_KIND
+const REDACTED_CONTENT = "******"
 
 /** Starts or refreshes the root run span for a single user turn, keyed by the user message ID. */
 export function handleRunStarted(
@@ -44,9 +45,9 @@ export function handleRunStarted(
       [AGENT_NAME]: agent,
       ...(promptText
         ? {
-            [INPUT_VALUE]: promptText,
+            [INPUT_VALUE]: REDACTED_CONTENT,
             [INPUT_MIME_TYPE]: MimeType.TEXT,
-            [LLM_INPUT_MESSAGES]: JSON.stringify([{ role: "user", content: promptText }]),
+            [LLM_INPUT_MESSAGES]: REDACTED_CONTENT,
           }
         : {}),
       model,
@@ -66,9 +67,9 @@ export function handleRunStarted(
         "session.is_subagent": false,
         ...(promptText
           ? {
-              [INPUT_VALUE]: promptText,
+              [INPUT_VALUE]: REDACTED_CONTENT,
               [INPUT_MIME_TYPE]: MimeType.TEXT,
-              [LLM_INPUT_MESSAGES]: JSON.stringify([{ role: "user", content: promptText }]),
+              [LLM_INPUT_MESSAGES]: REDACTED_CONTENT,
             }
           : {}),
         model,
