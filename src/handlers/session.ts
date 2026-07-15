@@ -163,6 +163,7 @@ function clearRunCorrelations(sessionID: string, ctx: HandlerContext) {
   for (const [messageID, runID] of ctx.assistantRuns) {
     if (deletedRunIDs.has(runID)) ctx.assistantRuns.delete(messageID)
   }
+  return deletedRunIDs
 }
 
 /** Emits a `session.idle` log event, records duration and session total histograms, ends the session span, and clears pending state. */
@@ -253,8 +254,28 @@ export function handleSessionIdle(e: EventSessionIdle, ctx: HandlerContext) {
 /** Clears retained session sequence and correlation state after the session is deleted. */
 export function handleSessionDeleted(e: EventSessionDeleted, ctx: HandlerContext) {
   const sessionID = e.properties.info.id
+  const deletedRunIDs = clearRunCorrelations(sessionID, ctx)
+  const activeRunID = ctx.activeRuns.get(sessionID)
+  if (activeRunID) deletedRunIDs.add(activeRunID)
+  ctx.activeRuns.delete(sessionID)
+  for (const [messageID, runID] of ctx.assistantRuns) {
+    if (deletedRunIDs.has(runID)) ctx.assistantRuns.delete(messageID)
+  }
+  for (const runID of deletedRunIDs) {
+    const runSpan = ctx.runSpans.get(runID)
+    runSpan?.setStatus({ code: SpanStatusCode.ERROR, message: "session deleted" })
+    runSpan?.end()
+    ctx.runSpans.delete(runID)
+    ctx.runInputLengths.delete(runID)
+    ctx.runSpanContexts.delete(runID)
+  }
+  const sessionSpan = ctx.sessionSpans.get(sessionID)
+  sessionSpan?.setStatus({ code: SpanStatusCode.ERROR, message: "session deleted" })
+  sessionSpan?.end()
+  ctx.sessionSpans.delete(sessionID)
+  ctx.sessionTotals.delete(sessionID)
+  ctx.sessionDiffTotals.delete(sessionID)
   sweepSession(sessionID, ctx)
-  clearRunCorrelations(sessionID, ctx)
   ctx.eventSequences.delete(sessionID)
   ctx.interactionSequences.delete(sessionID)
   ctx.sessionSpanContexts.delete(sessionID)
@@ -271,10 +292,11 @@ export function handleSessionError(e: EventSessionError, ctx: HandlerContext) {
     ctx.sessionTotals.delete(rawID)
     ctx.sessionDiffTotals.delete(rawID)
   }
-  sweepSession(sessionID, ctx)
   clearRunCorrelations(sessionID, ctx)
+  sweepSession(sessionID, ctx)
   ctx.eventSequences.delete(sessionID)
   ctx.interactionSequences.delete(sessionID)
+  ctx.sessionSpanContexts.delete(sessionID)
 
   if (rawID) {
     const sessionSpan = ctx.sessionSpans.get(rawID)

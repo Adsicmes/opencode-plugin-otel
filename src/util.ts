@@ -124,7 +124,7 @@ export function beginPrompt(sessionID: string, runID: string | undefined, ctx: H
 }
 
 export function nextEventSequence(sessionID: string, ctx: HandlerContext): number | undefined {
-  if (!ctx.promptContexts.has(sessionID)) return undefined
+  if (!ctx.promptContexts.has(sessionID) && !ctx.eventSequences.has(sessionID)) return undefined
   const sequence = ctx.eventSequences.get(sessionID) ?? 0
   setBoundedMap(ctx.eventSequences, sessionID, sequence + 1)
   return sequence

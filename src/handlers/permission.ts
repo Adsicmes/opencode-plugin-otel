@@ -23,10 +23,13 @@ export function handlePermissionReplied(e: EventPermissionReplied, ctx: HandlerC
   const { permissionID, sessionID, response } = e.properties
   const pending = ctx.pendingPermissions.get(permissionID)
   ctx.pendingPermissions.delete(permissionID)
-  const decision = response === "allow" || response === "allowAlways" ? "accept" : "reject"
-  const source = response === "allowAlways"
+  const normalizedResponse = response === "once" || response === "always" || response === "reject"
+    ? response
+    : "always"
+  const decision = normalizedResponse === "reject" ? "reject" : "accept"
+  const source = normalizedResponse === "always"
     ? "user_permanent"
-    : response === "allow"
+    : normalizedResponse === "once"
       ? "user_temporary"
       : "user_reject"
   const { agentName, agentType } = getSessionAgentMeta(sessionID, ctx)
@@ -49,7 +52,7 @@ export function handlePermissionReplied(e: EventPermissionReplied, ctx: HandlerC
       tool_type: pending?.type ?? "unknown",
       ...(pending ? { tool_title_length: pending.titleLength } : {}),
       decision,
-      source: ctx.profile.name === "claude-code" ? source : response,
+      source: ctx.profile.name === "claude-code" ? source : normalizedResponse,
       ...(ctx.profile.name === "claude-code" ? { tool_use_id: pending?.toolUseID ?? crypto.randomUUID() } : {}),
       ...agentAttrs(agentName, agentType),
     },

@@ -95,13 +95,14 @@ export const OtelPlugin: Plugin = async ({ project, client, directory, worktree 
   const { meterProvider, loggerProvider, tracerProvider } = providers
   await log("info", "OTel SDK initialized")
 
-  const instruments = createInstruments(profile, PLUGIN_VERSION)
-  const logger = logs.getLogger(profile.scopeName, PLUGIN_VERSION)
+  const scopeVersion = profile.name === "claude-code" ? PLUGIN_VERSION : undefined
+  const instruments = createInstruments(profile, scopeVersion)
+  const logger = logs.getLogger(profile.scopeName, scopeVersion)
   const emitLog: HandlerContext["emitLog"] = (record) => {
     if (!config.logsEnabled) return
     logger.emit(record)
   }
-  const tracer = trace.getTracer(profile.scopeName, PLUGIN_VERSION)
+  const tracer = trace.getTracer(profile.scopeName, scopeVersion)
   const remoteContext = remoteParentContext(config.traceparent, config.tracestate)
   if (config.traceparent && !remoteContext) {
     await log("warn", "invalid OPENCODE_TRACEPARENT ignored", { traceparentLength: config.traceparent.length })

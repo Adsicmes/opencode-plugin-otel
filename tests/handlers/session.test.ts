@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test"
-import { handleSessionCreated, handleSessionIdle, handleSessionError, handleSessionStatus } from "../../src/handlers/session.ts"
+import { handleRunStarted, handleSessionCreated, handleSessionDeleted, handleSessionIdle, handleSessionError, handleSessionStatus } from "../../src/handlers/session.ts"
 import { makeCtx, makeTracer } from "../helpers.ts"
-import type { EventSessionCreated, EventSessionIdle, EventSessionError, EventSessionStatus } from "@opencode-ai/sdk"
+import type { EventSessionCreated, EventSessionDeleted, EventSessionIdle, EventSessionError, EventSessionStatus } from "@opencode-ai/sdk"
 import type { Span } from "@opentelemetry/api"
 
 function makeSessionCreated(sessionID: string, createdAt = 1000, parentID?: string): EventSessionCreated {
@@ -21,6 +21,10 @@ function makeSessionCreated(sessionID: string, createdAt = 1000, parentID?: stri
 
 function makeSessionIdle(sessionID: string): EventSessionIdle {
   return { type: "session.idle", properties: { sessionID } } as EventSessionIdle
+}
+
+function makeSessionDeleted(sessionID: string): EventSessionDeleted {
+  return { type: "session.deleted", properties: { info: { id: sessionID } } } as EventSessionDeleted
 }
 
 function makeSessionError(sessionID: string, error?: { name: string }): EventSessionError {
@@ -202,6 +206,28 @@ describe("handleSessionError", () => {
     await handleSessionCreated(makeSessionCreated("ses_1"), ctx)
     handleSessionError({ type: "session.error", properties: {} } as unknown as EventSessionError, ctx)
     expect(ctx.sessionTotals.has("ses_1")).toBe(true)
+  })
+})
+
+describe("handleSessionDeleted", () => {
+  test("ends active spans and clears session and run state", async () => {
+    const { ctx, tracer } = makeCtx()
+    await handleSessionCreated(makeSessionCreated("ses_1"), ctx)
+    ctx.sessionDiffTotals.set("ses_1", { additions: 1, deletions: 2 })
+    ctx.promptContextsByRun.set("user_1", { sessionID: "ses_1", promptID: "prompt_1", interactionSequence: 1, runID: "user_1" })
+    handleRunStarted("user_1", "ses_1", "build", 10, "anthropic/claude", 1000, ctx)
+    ctx.assistantRuns.set("assistant_1", "user_1")
+
+    handleSessionDeleted(makeSessionDeleted("ses_1"), ctx)
+
+    expect(tracer.spans.at(0)!.ended).toBe(true)
+    expect(ctx.sessionTotals.has("ses_1")).toBe(false)
+    expect(ctx.sessionDiffTotals.has("ses_1")).toBe(false)
+    expect(ctx.activeRuns.has("ses_1")).toBe(false)
+    expect(ctx.runSpans.has("user_1")).toBe(false)
+    expect(ctx.runSpanContexts.has("user_1")).toBe(false)
+    expect(ctx.runInputLengths.has("user_1")).toBe(false)
+    expect(ctx.assistantRuns.has("assistant_1")).toBe(false)
   })
 })
 

@@ -64,6 +64,7 @@ export function handleMessageUpdated(e: EventMessageUpdated, ctx: HandlerContext
   const duration = assistant.time.completed - assistant.time.created
   const { agentName, agentType } = getSessionAgentMeta(sessionID, ctx)
   const agent = agentName
+  const querySource = agentType === "subagent" ? "subagent" : "main"
 
   const totalTokens = assistant.tokens.input + assistant.tokens.output + assistant.tokens.reasoning
     + assistant.tokens.cache.read + assistant.tokens.cache.write
@@ -71,7 +72,7 @@ export function handleMessageUpdated(e: EventMessageUpdated, ctx: HandlerContext
   if (isMetricEnabled("token.usage", ctx)) {
     const { tokenCounter } = ctx.instruments
     const metricAttrs = ctx.profile.name === "claude-code"
-      ? { "agent.name": agent, query_source: agentType === "subagent" ? "subagent" : "main" }
+      ? { "agent.name": agent, query_source: querySource }
       : { agent }
     tokenCounter.add(assistant.tokens.input, { ...ctx.commonAttrs, "session.id": sessionID, model: modelID, ...metricAttrs, type: "input" })
     tokenCounter.add(assistant.tokens.output, { ...ctx.commonAttrs, "session.id": sessionID, model: modelID, ...metricAttrs, type: "output" })
@@ -88,7 +89,7 @@ export function handleMessageUpdated(e: EventMessageUpdated, ctx: HandlerContext
       "session.id": sessionID,
       model: modelID,
       ...(ctx.profile.name === "claude-code"
-        ? { "agent.name": agent, query_source: agentType === "subagent" ? "subagent" : "main" }
+        ? { "agent.name": agent, query_source: querySource }
         : { agent }),
     })
   }
@@ -153,6 +154,7 @@ export function handleMessageUpdated(e: EventMessageUpdated, ctx: HandlerContext
             output_tokens: assistant.tokens.output,
             cache_read_tokens: assistant.tokens.cache.read,
             cache_creation_tokens: assistant.tokens.cache.write,
+            query_source: querySource,
             success: !assistant.error,
           }
         : {}),
@@ -182,6 +184,7 @@ export function handleMessageUpdated(e: EventMessageUpdated, ctx: HandlerContext
         model: modelID,
         provider: providerID,
         ...agentAttrs(agentName, agentType),
+        ...(ctx.profile.name === "claude-code" ? { query_source: querySource } : {}),
         error: errorSummary(assistant.error),
         duration_ms: duration,
       },
@@ -207,6 +210,7 @@ export function handleMessageUpdated(e: EventMessageUpdated, ctx: HandlerContext
         model: modelID,
         provider: providerID,
         ...agentAttrs(agentName, agentType),
+        ...(ctx.profile.name === "claude-code" ? { query_source: querySource } : {}),
         cost_usd: assistant.cost,
         duration_ms: duration,
       input_tokens: assistant.tokens.input,
@@ -414,6 +418,7 @@ export function handleMessagePartUpdated(e: EventMessagePartUpdated, ctx: Handle
       attributes: {
         tool_name: toolPart.tool,
         ...(ctx.profile.name === "claude-code" ? { tool_use_id: toolPart.callID } : {}),
+        ...(ctx.profile.name === "claude-code" ? { tool_input_size_bytes: serializedByteLength(toolPart.state.input) } : {}),
         ...agentAttrs(agentName, agentType),
         success,
         duration_ms,

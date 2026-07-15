@@ -94,6 +94,15 @@ describe("Claude Code telemetry profile", () => {
     expect(ctx.interactionSequences.get("session_1")).toBe(2)
   })
 
+  test("keeps sequencing late events after idle", () => {
+    const { ctx, logger } = makeCtx("project", [], [], true, {}, "claude-code")
+    beginPrompt("session_1", "user_1", ctx)
+    emitTelemetryEvent(ctx, { eventName: "user_prompt", sessionID: "session_1", runID: "user_1", timestamp: 1000, severityNumber: SeverityNumber.INFO, severityText: "INFO" })
+    handleSessionIdle({ type: "session.idle", properties: { sessionID: "session_1" } } as EventSessionIdle, ctx)
+    emitTelemetryEvent(ctx, { eventName: "api_request", sessionID: "session_1", runID: "user_1", timestamp: 2000, severityNumber: SeverityNumber.INFO, severityText: "INFO" })
+    expect(logger.records.at(-1)!.attributes!["event.sequence"]).toBe(1)
+  })
+
   test("uses the event run id to correlate interleaved prompts", () => {
     const { ctx, logger } = makeCtx("project", [], [], true, {}, "claude-code")
     const firstPromptID = beginPrompt("session_1", "user_1", ctx)
@@ -127,6 +136,7 @@ describe("Claude Code telemetry profile", () => {
     expect(JSON.stringify(toolSpan.attributes)).not.toContain("secret output")
     expect(logger.records[0]!.body).toBe("claude_code.tool_result")
     expect(logger.records[0]!.attributes!.tool_use_id).toBe("call_1")
+    expect(logger.records[0]!.attributes!.tool_input_size_bytes).toBeGreaterThan(0)
   })
 
   test("correlates an out-of-order tool result with its fallback span", () => {
@@ -141,7 +151,7 @@ describe("Claude Code telemetry profile", () => {
     ctx.pendingPermissions.set("permission_1", { type: "tool", titleLength: 4, sessionID: "session_1" })
     const event = {
       type: "permission.replied",
-      properties: { permissionID: "permission_1", sessionID: "session_1", response: "allowAlways" },
+      properties: { permissionID: "permission_1", sessionID: "session_1", response: "always" },
     } as EventPermissionReplied
     handlePermissionReplied(event, ctx)
     expect(logger.records[0]!.body).toBe("claude_code.tool_decision")
@@ -152,7 +162,7 @@ describe("Claude Code telemetry profile", () => {
   test("preserves a real permission call id", () => {
     const { ctx, logger } = makeCtx("project", [], [], true, {}, "claude-code")
     ctx.pendingPermissions.set("permission_1", { type: "tool", titleLength: 4, sessionID: "session_1", toolUseID: "call_real" })
-    handlePermissionReplied({ type: "permission.replied", properties: { permissionID: "permission_1", sessionID: "session_1", response: "allow" } } as EventPermissionReplied, ctx)
+    handlePermissionReplied({ type: "permission.replied", properties: { permissionID: "permission_1", sessionID: "session_1", response: "once" } } as EventPermissionReplied, ctx)
     expect(logger.records[0]!.attributes!.tool_use_id).toBe("call_real")
   })
 })

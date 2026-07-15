@@ -63,7 +63,7 @@ function makeToolPartUpdated(status: "running" | "completed"): EventMessagePartU
 function makePermissionReplied(): EventPermissionReplied {
   return {
     type: "permission.replied",
-    properties: { permissionID: "perm_1", sessionID: "ses_1", response: "allow" },
+    properties: { permissionID: "perm_1", sessionID: "ses_1", response: "once" },
   } as unknown as EventPermissionReplied
 }
 
