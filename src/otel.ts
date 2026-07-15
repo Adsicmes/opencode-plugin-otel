@@ -16,6 +16,7 @@ import { resourceFromAttributes } from "@opentelemetry/resources"
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions"
 import { ATTR_HOST_ARCH } from "@opentelemetry/semantic-conventions/incubating"
 import type { Instruments } from "./types.ts"
+import type { TelemetryProfile } from "./schema.ts"
 import { parseAttributePairs } from "./config.ts"
 import {
   createGrpcMetadata,
@@ -32,10 +33,10 @@ import {
  * `host.arch`. Additional attributes from `OTEL_RESOURCE_ATTRIBUTES` are merged in and
  * may override the defaults.
  */
-export function buildResource(version: string) {
+export function buildResource(version: string, profileName: TelemetryProfile["name"] = "opencode") {
   const attrs: Record<string, string> = {
     [ATTR_SERVICE_NAME]: "opencode",
-    "app.version": version,
+    ...(profileName === "claude-code" ? { "service.version": version } : { "app.version": version }),
     "os.type": process.platform,
     [ATTR_HOST_ARCH]: process.arch,
     ...parseAttributePairs(process.env["OTEL_RESOURCE_ATTRIBUTES"]),
@@ -78,8 +79,9 @@ export async function setupOtel(
   version: string,
   otlpHeaders?: string,
   otlpHeadersHelper?: string,
+  profileName: TelemetryProfile["name"] = "opencode",
 ): Promise<OtelProviders> {
-  const resource = buildResource(version)
+  const resource = buildResource(version, profileName)
   const staticHeaders = parseOtlpHeaders(otlpHeaders)
   const dynamicHeaders = new DynamicHeaders(staticHeaders, otlpHeadersHelper)
   if (otlpHeadersHelper) {
@@ -145,69 +147,71 @@ export async function setupOtel(
 }
 
 /** Creates all metric instruments using the global `MeterProvider`. Metric names are prefixed with `prefix`. */
-export function createInstruments(prefix: string): Instruments {
-  const meter = metrics.getMeter("com.opencode")
+export function createInstruments(profile: TelemetryProfile, version?: string): Instruments {
+  const prefix = profile.metricPrefix
+  const extensionPrefix = profile.name === "claude-code" ? "opencode." : prefix
+  const meter = metrics.getMeter(profile.scopeName, version)
   return {
     sessionCounter: meter.createCounter(`${prefix}session.count`, {
-      unit: "{session}",
+      unit: profile.metricUnit("session.count", "{session}"),
       description: "Count of opencode sessions started",
     }),
     tokenCounter: meter.createCounter(`${prefix}token.usage`, {
-      unit: "tokens",
+      unit: profile.metricUnit("token.usage", "tokens"),
       description: "Number of tokens used",
     }),
     costCounter: meter.createCounter(`${prefix}cost.usage`, {
-      unit: "USD",
+      unit: profile.metricUnit("cost.usage", "USD"),
       description: "Cost of the opencode session in USD",
     }),
     linesCounter: meter.createCounter(`${prefix}lines_of_code.count`, {
-      unit: "{line}",
+      unit: profile.metricUnit("lines_of_code.count", "{line}"),
       description: "Gross positive churn of lines added/removed across a session. Emits the positive delta vs. the previous session.diff; negative deltas (cumulative shrinkage) are dropped, so sums do not reconcile to net after any revert. Use lines_of_code.total for the authoritative live cumulative.",
     }),
-    linesTotalGauge: meter.createGauge(`${prefix}lines_of_code.total`, {
+    linesTotalGauge: meter.createGauge(`${extensionPrefix}lines_of_code.total`, {
       unit: "{line}",
       description: "Authoritative live cumulative lines added/removed for the current session. Mirrors opencode's session.diff cumulative value on every event; tracks partial and full reverts faithfully.",
     }),
     commitCounter: meter.createCounter(`${prefix}commit.count`, {
-      unit: "{commit}",
+      unit: profile.metricUnit("commit.count", "{commit}"),
       description: "Number of git commits created",
     }),
-    toolDurationHistogram: meter.createHistogram(`${prefix}tool.duration`, {
+    toolDurationHistogram: meter.createHistogram(`${extensionPrefix}tool.duration`, {
       unit: "ms",
       description: "Duration of tool executions in milliseconds",
     }),
-    cacheCounter: meter.createCounter(`${prefix}cache.count`, {
+    cacheCounter: meter.createCounter(`${extensionPrefix}cache.count`, {
       unit: "{request}",
       description: "Token cache activity (cacheRead/cacheCreation) per completed assistant message",
     }),
-    sessionDurationHistogram: meter.createHistogram(`${prefix}session.duration`, {
+    sessionDurationHistogram: meter.createHistogram(`${extensionPrefix}session.duration`, {
       unit: "ms",
       description: "Duration of a session from created to idle in milliseconds",
     }),
-    messageCounter: meter.createCounter(`${prefix}message.count`, {
+    messageCounter: meter.createCounter(`${extensionPrefix}message.count`, {
       unit: "{message}",
       description: "Number of completed assistant messages per session",
     }),
-    sessionTokenGauge: meter.createHistogram(`${prefix}session.token.total`, {
+    sessionTokenGauge: meter.createHistogram(`${extensionPrefix}session.token.total`, {
       unit: "tokens",
       description: "Total tokens consumed per session, recorded as a histogram on session idle",
     }),
-    sessionCostGauge: meter.createHistogram(`${prefix}session.cost.total`, {
+    sessionCostGauge: meter.createHistogram(`${extensionPrefix}session.cost.total`, {
       unit: "USD",
       description: "Total cost per session in USD, recorded as a histogram on session idle",
       advice: {
         explicitBucketBoundaries: [0.01, 0.05, 0.10, 0.25, 0.50, 1.00, 2.50, 5.00, 10.00, 25.00],
       },
     }),
-    modelUsageCounter: meter.createCounter(`${prefix}model.usage`, {
+    modelUsageCounter: meter.createCounter(`${extensionPrefix}model.usage`, {
       unit: "{request}",
       description: "Number of completed assistant messages per model and provider",
     }),
-    retryCounter: meter.createCounter(`${prefix}retry.count`, {
+    retryCounter: meter.createCounter(`${extensionPrefix}retry.count`, {
       unit: "{retry}",
       description: "Number of API retries observed via session.status events",
     }),
-    subtaskCounter: meter.createCounter(`${prefix}subtask.count`, {
+    subtaskCounter: meter.createCounter(`${extensionPrefix}subtask.count`, {
       unit: "{subtask}",
       description: "Number of sub-agent invocations observed via subtask message parts",
     }),

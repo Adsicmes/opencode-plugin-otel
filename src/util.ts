@@ -1,14 +1,19 @@
-import { trace } from "@opentelemetry/api"
+import { trace, type Context } from "@opentelemetry/api"
+import type { LogAttributes, LogRecord, SeverityNumber } from "@opentelemetry/api-logs"
 import { MAX_PENDING } from "./types.ts"
+import { CLAUDE_STANDARD_METRICS } from "./schema.ts"
 import type { HandlerContext, SessionAgentType } from "./types.ts"
 
 /** Returns a human-readable summary string from an opencode error object. */
-export function errorSummary(err: { name: string; data?: unknown } | undefined): string {
+export function errorSummary(err: { name: string; data?: unknown; messageLength?: number } | undefined): string {
   if (!err) return "unknown"
+  const name = err.name.replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 64) || "unknown"
+  if (err.messageLength !== undefined) return `${name} (message_length=${err.messageLength})`
   if (err.data && typeof err.data === "object" && "message" in err.data) {
-    return `${err.name}: ${(err.data as { message: string }).message}`
+    const message = (err.data as { message: unknown }).message
+    if (typeof message === "string") return `${name} (message_length=${message.length})`
   }
-  return err.name
+  return name
 }
 
 /**
@@ -16,7 +21,7 @@ export function errorSummary(err: { name: string; data?: unknown } | undefined):
  * has reached `MAX_PENDING` capacity to prevent unbounded memory growth.
  */
 export function setBoundedMap<K, V>(map: Map<K, V>, key: K, value: V) {
-  if (map.size >= MAX_PENDING) {
+  if (!map.has(key) && map.size >= MAX_PENDING) {
     const [firstKey] = map.keys()
     if (firstKey !== undefined) map.delete(firstKey)
   }
@@ -56,8 +61,73 @@ export function resolveSessionTraceContext(
  * Returns `true` if the metric name (without prefix) is not in the disabled set.
  * The `name` should be the suffix after the metric prefix, e.g. `"session.count"`.
  */
-export function isMetricEnabled(name: string, ctx: { disabledMetrics: Set<string> }): boolean {
+export function isMetricEnabled(name: string, ctx: { disabledMetrics: Set<string>; profile?: HandlerContext["profile"] }): boolean {
+  if (ctx.profile?.name === "claude-code" && !CLAUDE_STANDARD_METRICS.has(name)) return false
   return !ctx.disabledMetrics.has(name)
+}
+
+export function emitTelemetryEvent(
+  ctx: HandlerContext,
+  input: {
+    eventName: string
+    sessionID: string
+    timestamp: number
+    severityNumber: SeverityNumber
+    severityText: string
+    attributes?: LogAttributes
+    context?: Context
+    runID?: string
+    promptID?: string
+  },
+) {
+  const body = ctx.profile.eventBody(input.eventName)
+  if (!body) return
+  const prompt = input.promptID
+    ? { promptID: input.promptID }
+    : input.runID
+      ? ctx.promptContextsByRun.get(input.runID)
+      : ctx.promptContexts.get(input.sessionID)
+  const sequence = nextEventSequence(input.sessionID, ctx)
+  const profileAttrs = ctx.profile.name === "claude-code"
+    ? {
+        "event.timestamp": new Date(input.timestamp).toISOString(),
+        ...(sequence === undefined ? {} : { "event.sequence": sequence }),
+        ...(prompt ? { "prompt.id": prompt.promptID } : {}),
+      }
+    : {}
+  const record: LogRecord = {
+    severityNumber: input.severityNumber,
+    severityText: input.severityText,
+    timestamp: input.timestamp,
+    observedTimestamp: Date.now(),
+    body,
+    attributes: {
+      "event.name": input.eventName,
+      "session.id": input.sessionID,
+      ...profileAttrs,
+      ...input.attributes,
+      ...ctx.commonAttrs,
+    },
+    ...(input.context ? { context: input.context } : {}),
+  }
+  ctx.emitLog(record)
+}
+
+export function beginPrompt(sessionID: string, runID: string | undefined, ctx: HandlerContext): string {
+  const promptID = crypto.randomUUID()
+  const interactionSequence = (ctx.interactionSequences.get(sessionID) ?? 0) + 1
+  setBoundedMap(ctx.interactionSequences, sessionID, interactionSequence)
+  const prompt = { sessionID, promptID, interactionSequence, ...(runID ? { runID } : {}) }
+  setBoundedMap(ctx.promptContexts, sessionID, prompt)
+  if (runID) setBoundedMap(ctx.promptContextsByRun, runID, prompt)
+  return promptID
+}
+
+export function nextEventSequence(sessionID: string, ctx: HandlerContext): number | undefined {
+  if (!ctx.promptContexts.has(sessionID)) return undefined
+  const sequence = ctx.eventSequences.get(sessionID) ?? 0
+  setBoundedMap(ctx.eventSequences, sessionID, sequence + 1)
+  return sequence
 }
 
 /**

@@ -93,8 +93,8 @@ describe("handleSessionIdle", () => {
 
   test("sweeps pendingPermissions for the session", () => {
     const { ctx } = makeCtx()
-    ctx.pendingPermissions.set("perm_1", { type: "tool", title: "Read", sessionID: "ses_1" })
-    ctx.pendingPermissions.set("perm_2", { type: "tool", title: "Write", sessionID: "ses_other" })
+    ctx.pendingPermissions.set("perm_1", { type: "tool", titleLength: 4, sessionID: "ses_1" })
+    ctx.pendingPermissions.set("perm_2", { type: "tool", titleLength: 5, sessionID: "ses_other" })
     handleSessionIdle(makeSessionIdle("ses_1"), ctx)
     expect(ctx.pendingPermissions.has("perm_1")).toBe(false)
     expect(ctx.pendingPermissions.has("perm_2")).toBe(true)
@@ -182,7 +182,7 @@ describe("handleSessionError", () => {
     const { ctx } = makeCtx()
     const t = makeTracer()
     const span = t.startSpan("tool") as unknown as Span
-    ctx.pendingPermissions.set("perm_1", { type: "tool", title: "Read", sessionID: "ses_1" })
+    ctx.pendingPermissions.set("perm_1", { type: "tool", titleLength: 4, sessionID: "ses_1" })
     ctx.pendingToolSpans.set("ses_1:call_1", { tool: "bash", sessionID: "ses_1", startMs: 0, span })
     handleSessionError(makeSessionError("ses_1"), ctx)
     expect(ctx.pendingPermissions.size).toBe(0)

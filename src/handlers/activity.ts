@@ -1,6 +1,6 @@
 import { SeverityNumber } from "@opentelemetry/api-logs"
 import type { EventSessionDiff, EventCommandExecuted } from "@opencode-ai/sdk"
-import { agentAttrs, getSessionAgentMeta, isMetricEnabled, setBoundedMap } from "../util.ts"
+import { agentAttrs, emitTelemetryEvent, getSessionAgentMeta, isMetricEnabled, setBoundedMap } from "../util.ts"
 import type { HandlerContext } from "../types.ts"
 
 /**
@@ -78,17 +78,15 @@ export function handleCommandExecuted(e: EventCommandExecuted, ctx: HandlerConte
     })
     ctx.log("debug", "otel: commit counter incremented", { sessionID: e.properties.sessionID })
   }
-  ctx.emitLog({
+  const now = Date.now()
+  emitTelemetryEvent(ctx, {
+    eventName: "commit",
+    sessionID: e.properties.sessionID,
+    timestamp: now,
     severityNumber: SeverityNumber.INFO,
     severityText: "INFO",
-    timestamp: Date.now(),
-    observedTimestamp: Date.now(),
-    body: "commit",
     attributes: {
-      "event.name": "commit",
-      "session.id": e.properties.sessionID,
       ...agentAttrs(agentName, agentType),
-      ...ctx.commonAttrs,
     },
   })
 }

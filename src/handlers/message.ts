@@ -1,14 +1,10 @@
 import { SeverityNumber } from "@opentelemetry/api-logs"
-import { SpanStatusCode, SpanKind } from "@opentelemetry/api"
+import { SpanStatusCode, SpanKind, trace, type Context } from "@opentelemetry/api"
 import type { AssistantMessage, EventMessageUpdated, EventMessagePartUpdated, ToolPart } from "@opencode-ai/sdk"
 import {
   AGENT_NAME,
-  INPUT_MIME_TYPE,
-  INPUT_VALUE,
   LLM_COST_TOTAL,
-  LLM_INPUT_MESSAGES,
   LLM_MODEL_NAME,
-  LLM_OUTPUT_MESSAGES,
   LLM_PROVIDER,
   LLM_SYSTEM,
   LLM_TOKEN_COUNT_COMPLETION,
@@ -17,15 +13,11 @@ import {
   LLM_TOKEN_COUNT_PROMPT_DETAILS_CACHE_READ,
   LLM_TOKEN_COUNT_PROMPT_DETAILS_CACHE_WRITE,
   LLM_TOKEN_COUNT_TOTAL,
-  MimeType,
   OpenInferenceSpanKind,
-  OUTPUT_MIME_TYPE,
-  OUTPUT_VALUE,
   SemanticConventions,
   SESSION_ID,
   TOOL_ID,
   TOOL_NAME,
-  TOOL_PARAMETERS,
 } from "@arizeai/openinference-semantic-conventions"
 import {
   agentAttrs,
@@ -36,13 +28,12 @@ import {
   isMetricEnabled,
   isTraceEnabled,
   resolveSessionTraceContext,
+  emitTelemetryEvent,
 } from "../util.ts"
 import type { HandlerContext } from "../types.ts"
 
 const OPENINFERENCE_SPAN_KIND = SemanticConventions.OPENINFERENCE_SPAN_KIND
 const LLM_FINISH_REASON = "llm.finish_reason"
-const REDACTED_CONTENT = "******"
-
 type SubtaskPart = {
   type: "subtask"
   sessionID: string
@@ -50,6 +41,10 @@ type SubtaskPart = {
   prompt: string
   description: string
   agent: string
+}
+
+function serializedByteLength(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value) ?? "", "utf8")
 }
 
 /**
@@ -75,15 +70,27 @@ export function handleMessageUpdated(e: EventMessageUpdated, ctx: HandlerContext
 
   if (isMetricEnabled("token.usage", ctx)) {
     const { tokenCounter } = ctx.instruments
-    tokenCounter.add(assistant.tokens.input, { ...ctx.commonAttrs, "session.id": sessionID, model: modelID, agent, type: "input" })
-    tokenCounter.add(assistant.tokens.output, { ...ctx.commonAttrs, "session.id": sessionID, model: modelID, agent, type: "output" })
-    tokenCounter.add(assistant.tokens.reasoning, { ...ctx.commonAttrs, "session.id": sessionID, model: modelID, agent, type: "reasoning" })
-    tokenCounter.add(assistant.tokens.cache.read, { ...ctx.commonAttrs, "session.id": sessionID, model: modelID, agent, type: "cacheRead" })
-    tokenCounter.add(assistant.tokens.cache.write, { ...ctx.commonAttrs, "session.id": sessionID, model: modelID, agent, type: "cacheCreation" })
+    const metricAttrs = ctx.profile.name === "claude-code"
+      ? { "agent.name": agent, query_source: agentType === "subagent" ? "subagent" : "main" }
+      : { agent }
+    tokenCounter.add(assistant.tokens.input, { ...ctx.commonAttrs, "session.id": sessionID, model: modelID, ...metricAttrs, type: "input" })
+    tokenCounter.add(assistant.tokens.output, { ...ctx.commonAttrs, "session.id": sessionID, model: modelID, ...metricAttrs, type: "output" })
+    if (ctx.profile.name !== "claude-code") {
+      tokenCounter.add(assistant.tokens.reasoning, { ...ctx.commonAttrs, "session.id": sessionID, model: modelID, agent, type: "reasoning" })
+    }
+    tokenCounter.add(assistant.tokens.cache.read, { ...ctx.commonAttrs, "session.id": sessionID, model: modelID, ...metricAttrs, type: "cacheRead" })
+    tokenCounter.add(assistant.tokens.cache.write, { ...ctx.commonAttrs, "session.id": sessionID, model: modelID, ...metricAttrs, type: "cacheCreation" })
   }
 
   if (isMetricEnabled("cost.usage", ctx)) {
-    ctx.instruments.costCounter.add(assistant.cost, { ...ctx.commonAttrs, "session.id": sessionID, model: modelID, agent })
+    ctx.instruments.costCounter.add(assistant.cost, {
+      ...ctx.commonAttrs,
+      "session.id": sessionID,
+      model: modelID,
+      ...(ctx.profile.name === "claude-code"
+        ? { "agent.name": agent, query_source: agentType === "subagent" ? "subagent" : "main" }
+        : { agent }),
+    })
   }
 
   if (isMetricEnabled("cache.count", ctx)) {
@@ -119,8 +126,9 @@ export function handleMessageUpdated(e: EventMessageUpdated, ctx: HandlerContext
 
   const msgKey = `${sessionID}:${assistant.id}`
   const msgSpan = ctx.messageSpans.get(msgKey)
+  let logContext: Context | undefined
   if (msgSpan) {
-    const outputText = ctx.messageOutputs.get(msgKey)
+    const outputLength = ctx.messageOutputLengths.get(msgKey)
     msgSpan.setAttributes({
       [AGENT_NAME]: agentName,
       "agent.type": agentType,
@@ -132,16 +140,25 @@ export function handleMessageUpdated(e: EventMessageUpdated, ctx: HandlerContext
       [LLM_TOKEN_COUNT_TOTAL]: totalTokens,
       [LLM_FINISH_REASON]: assistant.error ? "error" : (assistant.finish ?? "stop"),
       [LLM_COST_TOTAL]: assistant.cost,
-      ...(outputText
-        ? {
-            [OUTPUT_VALUE]: REDACTED_CONTENT,
-            [OUTPUT_MIME_TYPE]: MimeType.TEXT,
-            [LLM_OUTPUT_MESSAGES]: REDACTED_CONTENT,
-          }
-        : {}),
+      ...(outputLength ? { "output.length": outputLength } : {}),
       cost_usd: assistant.cost,
       duration_ms: duration,
+      ...(ctx.profile.name === "claude-code"
+        ? {
+            "span.type": ctx.profile.spanType("llm_request"),
+            model: modelID,
+            "gen_ai.system": providerID,
+            "gen_ai.request.model": modelID,
+            input_tokens: assistant.tokens.input,
+            output_tokens: assistant.tokens.output,
+            cache_read_tokens: assistant.tokens.cache.read,
+            cache_creation_tokens: assistant.tokens.cache.write,
+            success: !assistant.error,
+          }
+        : {}),
     })
+    const spanContext = msgSpan.spanContext()
+    logContext = trace.setSpanContext(ctx.rootContext(), spanContext)
     if (assistant.error) {
       msgSpan.setStatus({ code: SpanStatusCode.ERROR, message: errorSummary(assistant.error) })
     } else {
@@ -149,25 +166,24 @@ export function handleMessageUpdated(e: EventMessageUpdated, ctx: HandlerContext
     }
     msgSpan.end(assistant.time.completed)
     ctx.messageSpans.delete(msgKey)
-    ctx.messageOutputs.delete(msgKey)
+    ctx.messageOutputLengths.delete(msgKey)
   }
 
   if (assistant.error) {
-    ctx.emitLog({
+    emitTelemetryEvent(ctx, {
+      eventName: "api_error",
+      sessionID,
+      timestamp: ctx.profile.name === "claude-code" ? assistant.time.completed : assistant.time.created,
       severityNumber: SeverityNumber.ERROR,
       severityText: "ERROR",
-      timestamp: assistant.time.created,
-      observedTimestamp: Date.now(),
-      body: "api_error",
+      context: logContext,
+      runID: assistant.parentID,
       attributes: {
-        "event.name": "api_error",
-        "session.id": sessionID,
         model: modelID,
         provider: providerID,
         ...agentAttrs(agentName, agentType),
         error: errorSummary(assistant.error),
         duration_ms: duration,
-        ...ctx.commonAttrs,
       },
     })
     return ctx.log("error", "otel: api_error", {
@@ -179,15 +195,15 @@ export function handleMessageUpdated(e: EventMessageUpdated, ctx: HandlerContext
     })
   }
 
-  ctx.emitLog({
+  emitTelemetryEvent(ctx, {
+    eventName: "api_request",
+    sessionID,
+    timestamp: ctx.profile.name === "claude-code" ? assistant.time.completed : assistant.time.created,
     severityNumber: SeverityNumber.INFO,
     severityText: "INFO",
-    timestamp: assistant.time.created,
-    observedTimestamp: Date.now(),
-    body: "api_request",
+    context: logContext,
+    runID: assistant.parentID,
     attributes: {
-      "event.name": "api_request",
-        "session.id": sessionID,
         model: modelID,
         provider: providerID,
         ...agentAttrs(agentName, agentType),
@@ -198,7 +214,6 @@ export function handleMessageUpdated(e: EventMessageUpdated, ctx: HandlerContext
       reasoning_tokens: assistant.tokens.reasoning,
       cache_read_tokens: assistant.tokens.cache.read,
       cache_creation_tokens: assistant.tokens.cache.write,
-      ...ctx.commonAttrs,
     },
   })
   return ctx.log("info", "otel: api_request", {
@@ -227,7 +242,9 @@ export function handleMessagePartUpdated(e: EventMessagePartUpdated, ctx: Handle
 
   if (part.type === "text") {
     const key = `${part.sessionID}:${part.messageID}`
-    ctx.messageOutputs.set(key, `${ctx.messageOutputs.get(key) ?? ""}${part.text}`)
+    if (ctx.messageSpans.has(key)) {
+      setBoundedMap(ctx.messageOutputLengths, key, (ctx.messageOutputLengths.get(key) ?? 0) + part.text.length)
+    }
     return
   }
 
@@ -241,25 +258,23 @@ export function handleMessagePartUpdated(e: EventMessagePartUpdated, ctx: Handle
         "agent.type": "subagent",
       })
     }
-    ctx.emitLog({
+    emitTelemetryEvent(ctx, {
+      eventName: "subtask_invoked",
+      sessionID: subtask.sessionID,
+      timestamp: Date.now(),
       severityNumber: SeverityNumber.INFO,
       severityText: "INFO",
-      timestamp: Date.now(),
-      observedTimestamp: Date.now(),
-      body: "subtask_invoked",
+      runID: subtask.messageID,
       attributes: {
-        "event.name": "subtask_invoked",
-        "session.id": subtask.sessionID,
         ...agentAttrs(subtask.agent, "subagent"),
-        description: subtask.description,
+        description_length: subtask.description.length,
         prompt_length: subtask.prompt.length,
-        ...ctx.commonAttrs,
       },
     })
     return ctx.log("info", "otel: subtask_invoked", {
       sessionID: subtask.sessionID,
       agent: subtask.agent,
-      description: subtask.description,
+      description_length: subtask.description.length,
     })
   }
 
@@ -272,7 +287,7 @@ export function handleMessagePartUpdated(e: EventMessagePartUpdated, ctx: Handle
       const toolSpan = isTraceEnabled("tool", ctx)
         ? (() => {
             return ctx.tracer.startSpan(
-              `${ctx.tracePrefix}tool.${toolPart.tool}`,
+              ctx.profile.spanName("tool", toolPart.tool),
               {
                 startTime: toolPart.state.time.start,
                 kind: SpanKind.INTERNAL,
@@ -281,9 +296,14 @@ export function handleMessagePartUpdated(e: EventMessagePartUpdated, ctx: Handle
                   [SESSION_ID]: toolPart.sessionID,
                   [TOOL_ID]: toolPart.callID,
                   [TOOL_NAME]: toolPart.tool,
-                  [TOOL_PARAMETERS]: JSON.stringify(toolPart.state.input),
-                  [INPUT_VALUE]: JSON.stringify(toolPart.state.input),
-                  [INPUT_MIME_TYPE]: MimeType.JSON,
+                  ...(ctx.profile.name === "claude-code"
+                    ? {
+                        "span.type": ctx.profile.spanType("tool"),
+                        tool_name: toolPart.tool,
+                        tool_use_id: toolPart.callID,
+                      }
+                    : {}),
+                  "tool.input_size_bytes": serializedByteLength(toolPart.state.input),
                   [AGENT_NAME]: agentName,
                   "agent.type": agentType,
                   ...ctx.commonAttrs,
@@ -300,6 +320,7 @@ export function handleMessagePartUpdated(e: EventMessagePartUpdated, ctx: Handle
         sessionID: toolPart.sessionID,
         startMs: toolPart.state.time.start,
         span: toolSpan,
+        spanContext: toolSpan?.spanContext(),
       })
       ctx.log("debug", "otel: tool span started", { sessionID: toolPart.sessionID, tool: toolPart.tool, key })
       return
@@ -325,10 +346,11 @@ export function handleMessagePartUpdated(e: EventMessagePartUpdated, ctx: Handle
       })
     }
 
+    let completedSpanContext = pending?.spanContext
     if (isTraceEnabled("tool", ctx)) {
       const toolSpan = pending?.span ?? (() => {
         return ctx.tracer.startSpan(
-          `${ctx.tracePrefix}tool.${toolPart.tool}`,
+          ctx.profile.spanName("tool", toolPart.tool),
           {
             startTime: start,
             kind: SpanKind.INTERNAL,
@@ -337,9 +359,14 @@ export function handleMessagePartUpdated(e: EventMessagePartUpdated, ctx: Handle
               [SESSION_ID]: toolPart.sessionID,
               [TOOL_ID]: toolPart.callID,
               [TOOL_NAME]: toolPart.tool,
-              [TOOL_PARAMETERS]: JSON.stringify(toolPart.state.input),
-              [INPUT_VALUE]: JSON.stringify(toolPart.state.input),
-              [INPUT_MIME_TYPE]: MimeType.JSON,
+              ...(ctx.profile.name === "claude-code"
+                ? {
+                    "span.type": ctx.profile.spanType("tool"),
+                    tool_name: toolPart.tool,
+                    tool_use_id: toolPart.callID,
+                  }
+                : {}),
+              "tool.input_size_bytes": serializedByteLength(toolPart.state.input),
               ...ctx.commonAttrs,
             },
           },
@@ -348,47 +375,49 @@ export function handleMessagePartUpdated(e: EventMessagePartUpdated, ctx: Handle
           }),
         )
       })()
+      completedSpanContext = toolSpan.spanContext()
       toolSpan.setAttributes({ [AGENT_NAME]: agentName, "agent.type": agentType })
       toolSpan.setAttribute("tool.success", success)
+      if (ctx.profile.name === "claude-code") toolSpan.setAttribute("duration_ms", duration_ms)
       if (success) {
         const output = (toolPart.state as { output: string }).output
-        toolSpan.setAttributes({
-          [OUTPUT_VALUE]: output,
-          [OUTPUT_MIME_TYPE]: MimeType.TEXT,
-        })
         toolSpan.setAttribute("tool.result_size_bytes", Buffer.byteLength(output, "utf8"))
         toolSpan.setStatus({ code: SpanStatusCode.OK })
       } else {
         const err = (toolPart.state as { error: string }).error
-        toolSpan.setAttributes({
-          [OUTPUT_VALUE]: err,
-          [OUTPUT_MIME_TYPE]: MimeType.TEXT,
-        })
-        toolSpan.setAttribute("tool.error", err)
-        toolSpan.setStatus({ code: SpanStatusCode.ERROR, message: err })
+        const error = errorSummary({ name: "ToolError", data: { message: err } })
+        toolSpan.setAttribute("tool.error", error)
+        toolSpan.setAttribute("tool.error_size_bytes", Buffer.byteLength(err, "utf8"))
+        toolSpan.setStatus({ code: SpanStatusCode.ERROR, message: error })
       }
       toolSpan.end(end)
     }
 
     const sizeAttr = success
       ? { tool_result_size_bytes: Buffer.byteLength((toolPart.state as { output: string }).output, "utf8") }
-      : { error: (toolPart.state as { error: string }).error }
+      : {
+          error: errorSummary({ name: "ToolError", data: { message: (toolPart.state as { error: string }).error } }),
+          error_size_bytes: Buffer.byteLength((toolPart.state as { error: string }).error, "utf8"),
+        }
 
-    ctx.emitLog({
+    const toolContext = completedSpanContext
+      ? trace.setSpanContext(ctx.rootContext(), completedSpanContext)
+      : undefined
+    emitTelemetryEvent(ctx, {
+      eventName: "tool_result",
+      sessionID: toolPart.sessionID,
+      timestamp: end,
       severityNumber: success ? SeverityNumber.INFO : SeverityNumber.ERROR,
       severityText: success ? "INFO" : "ERROR",
-      timestamp: start,
-      observedTimestamp: Date.now(),
-      body: "tool_result",
+      context: toolContext,
+      runID: ctx.assistantRuns.get(toolPart.messageID),
       attributes: {
-        "event.name": "tool_result",
-        "session.id": toolPart.sessionID,
         tool_name: toolPart.tool,
+        ...(ctx.profile.name === "claude-code" ? { tool_use_id: toolPart.callID } : {}),
         ...agentAttrs(agentName, agentType),
         success,
         duration_ms,
         ...sizeAttr,
-        ...ctx.commonAttrs,
       },
     })
     ctx.log("debug", "otel: tool.duration histogram recorded", {
@@ -423,15 +452,15 @@ export function startMessageSpan(
   startTime: number,
   ctx: HandlerContext,
 ) {
+  setBoundedMap(ctx.assistantRuns, messageID, parentID)
   if (!isTraceEnabled("llm", ctx)) return
   const msgKey = `${sessionID}:${messageID}`
   if (ctx.messageSpans.has(msgKey)) return
-  setBoundedMap(ctx.assistantRuns, messageID, parentID)
   const { agentName, agentType } = getSessionAgentMeta(sessionID, ctx)
-  const inputText = ctx.runInputs.get(parentID)
+  const inputLength = ctx.runInputLengths.get(parentID)
 
   const msgSpan = ctx.tracer.startSpan(
-    `${ctx.tracePrefix}llm`,
+    ctx.profile.spanName("llm_request"),
     {
       startTime,
       kind: SpanKind.CLIENT,
@@ -443,13 +472,16 @@ export function startMessageSpan(
         [LLM_SYSTEM]: providerID,
         [LLM_PROVIDER]: providerID,
         [LLM_MODEL_NAME]: modelID,
-        ...(inputText
+        ...(ctx.profile.name === "claude-code"
           ? {
-              [INPUT_VALUE]: REDACTED_CONTENT,
-              [INPUT_MIME_TYPE]: MimeType.TEXT,
-              [LLM_INPUT_MESSAGES]: REDACTED_CONTENT,
+              "span.type": ctx.profile.spanType("llm_request"),
+              model: modelID,
+              "gen_ai.system": providerID,
+              "gen_ai.request.model": modelID,
+              "llm_request.context": "interaction",
             }
           : {}),
+        ...(inputLength ? { "input.length": inputLength } : {}),
         ...ctx.commonAttrs,
       },
     },

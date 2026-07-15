@@ -25,6 +25,7 @@ An [opencode](https://opencode.ai) plugin that exports telemetry via OpenTelemet
   - [Datadog example](#datadog-example)
   - [Honeycomb example](#honeycomb-example)
   - [Claude Code dashboard compatibility](#claude-code-dashboard-compatibility)
+- [Documentation](#documentation)
 - [Local development](#local-development)
 - [GitHub Discord notifications](#github-discord-notifications)
 
@@ -96,7 +97,8 @@ The environment variables (set them in your shell profile — `~/.zshrc`, `~/.ba
 | `OPENCODE_OTLP_PROTOCOL` | `grpc` | OTLP transport protocol: `grpc`, `http/protobuf`, or `http/json` |
 | `OPENCODE_OTLP_METRICS_INTERVAL` | `60000` | Metrics export interval in milliseconds |
 | `OPENCODE_OTLP_LOGS_INTERVAL` | `5000` | Logs export interval in milliseconds |
-| `OPENCODE_METRIC_PREFIX` | `opencode.` | Prefix for all metric names (e.g. set to `claude_code.` for Claude Code dashboard compatibility) |
+| `OPENCODE_TELEMETRY_PROFILE` | `opencode` | Telemetry schema profile: `opencode` or `claude-code`. The latter emits Claude Code-compatible metrics, events, and traces. |
+| `OPENCODE_METRIC_PREFIX` | `opencode.` | Prefix for metric names in the `opencode` profile. The `claude-code` profile uses the fixed `claude_code.` prefix. |
 | `OPENCODE_DISABLE_METRICS` | *(unset)* | Comma-separated list of metric name suffixes to disable (e.g. `cache.count,session.duration`) |
 | `OPENCODE_DISABLE_LOGS` | *(unset)* | Set to any non-empty value to suppress all OTLP log events while leaving metrics and traces unchanged |
 | `OPENCODE_DISABLE_TRACES` | *(unset)* | Comma-separated list of trace types to disable (`session`, `llm`, `tool`). Use `all`, `*`, `true`, or `1` to disable every trace type |
@@ -120,7 +122,7 @@ Every setting can also be passed inline through opencode's plugin **tuple form**
       "enabled": true,
       "endpoint": "http://localhost:4317",
       "protocol": "grpc",
-      "metricPrefix": "claude_code.",
+      "telemetryProfile": "claude-code",
       "resourceAttributes": "service.version=1.2.3,deployment.environment=production",
       "disabledTraces": ["tool"]
     }]
@@ -138,6 +140,7 @@ Option keys mirror the resolved config and map to the environment variables:
 | `protocol` | `OPENCODE_OTLP_PROTOCOL` |
 | `metricsInterval` | `OPENCODE_OTLP_METRICS_INTERVAL` |
 | `logsInterval` | `OPENCODE_OTLP_LOGS_INTERVAL` |
+| `telemetryProfile` | `OPENCODE_TELEMETRY_PROFILE` |
 | `metricPrefix` | `OPENCODE_METRIC_PREFIX` |
 | `otlpHeaders` | `OPENCODE_OTLP_HEADERS` |
 | `otlpHeadersHelper` | `OPENCODE_OTLP_HEADERS_HELPER` |
@@ -318,8 +321,15 @@ export OPENCODE_OTLP_HEADERS="Authorization=Basic <base64-instance-id:api-key>"
 ### Claude Code dashboard compatibility
 
 ```bash
-export OPENCODE_METRIC_PREFIX=claude_code.
+export OPENCODE_ENABLE_TELEMETRY=1
+export OPENCODE_TELEMETRY_PROFILE=claude-code
 ```
+
+This opt-in profile emits Claude Code-compatible metric names, event bodies, attributes, and span names while retaining opencode as the real producer identity. It defaults metrics to delta temporality and never exports prompt, response, tool input, tool output, permission title, subtask description, or raw error content; only bounded identifiers and length/byte statistics are emitted. Set `OPENCODE_METRIC_PREFIX=claude_code.` only when you need the legacy metric-name-only behavior.
+
+## Documentation
+
+See the [documentation index](docs/0-索引.md) for technical references and research maintained with this repository.
 
 ## Local development
 

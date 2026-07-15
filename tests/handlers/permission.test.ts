@@ -12,6 +12,7 @@ function makePermissionUpdated(id: string, sessionID = "ses_1"): EventPermission
       title: "Read file",
       sessionID,
       messageID: "msg_1",
+      callID: "call_1",
       metadata: {},
       time: { created: Date.now() },
     },
@@ -34,7 +35,7 @@ describe("handlePermissionUpdated", () => {
     const { ctx } = makeCtx()
     handlePermissionUpdated(makePermissionUpdated("perm_1"), ctx)
     expect(ctx.pendingPermissions.has("perm_1")).toBe(true)
-    expect(ctx.pendingPermissions.get("perm_1")!.title).toBe("Read file")
+    expect(ctx.pendingPermissions.get("perm_1")!.titleLength).toBe(9)
     expect(ctx.pendingPermissions.get("perm_1")!.sessionID).toBe("ses_1")
   })
 })
@@ -49,7 +50,7 @@ describe("handlePermissionReplied", () => {
     expect(record.body).toBe("tool_decision")
     expect(record.attributes?.["decision"]).toBe("accept")
     expect(record.attributes?.["source"]).toBe("allow")
-    expect(record.attributes?.["tool_name"]).toBe("Read file")
+    expect(record.attributes?.["tool_name"]).toBe("tool")
     expect(record.attributes?.["tool_type"]).toBe("tool")
     expect(record.attributes?.["agent.name"]).toBe("review")
     expect(record.attributes?.["agent.type"]).toBe("subagent")

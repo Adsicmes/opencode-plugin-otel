@@ -1,4 +1,5 @@
 import { LEVELS, type Level } from "./types.ts"
+import type { TelemetryProfileName } from "./schema.ts"
 
 /** Accepted values for `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE`. */
 export type MetricsTemporality = "cumulative" | "delta" | "lowmemory"
@@ -27,6 +28,7 @@ export type PluginConfig = {
   metricsTemporality: MetricsTemporality | undefined
   disabledMetrics: Set<string>
   disabledTraces: Set<string>
+  telemetryProfile: TelemetryProfileName
 }
 
 export function parseAttributePairs(raw: string | undefined): Record<string, string> {
@@ -69,9 +71,11 @@ export type OtelPluginOptions = {
   metricsTemporality?: MetricsTemporality
   disabledMetrics?: string[]
   disabledTraces?: string[]
+  telemetryProfile?: TelemetryProfileName
 }
 
 const VALID_PROTOCOLS = new Set<PluginConfig["protocol"]>(["grpc", "http/protobuf", "http/json"])
+const VALID_TELEMETRY_PROFILES = new Set<TelemetryProfileName>(["opencode", "claude-code"])
 
 function pickString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined
@@ -100,6 +104,12 @@ function pickMetricsTemporality(value: unknown): MetricsTemporality | undefined 
   if (typeof value !== "string") return undefined
   const normalized = value.toLowerCase()
   return VALID_TEMPORALITIES.has(normalized as MetricsTemporality) ? (normalized as MetricsTemporality) : undefined
+}
+
+function pickTelemetryProfile(value: unknown): TelemetryProfileName | undefined {
+  return typeof value === "string" && VALID_TELEMETRY_PROFILES.has(value as TelemetryProfileName)
+    ? value as TelemetryProfileName
+    : undefined
 }
 
 /** Parses a positive integer from an environment variable, returning `fallback` if absent or invalid. */
@@ -153,7 +163,11 @@ export function loadConfig(options: OtelPluginOptions = {}): PluginConfig {
   const tracestate = pickString(resolvedOptions.tracestate) ?? process.env["OPENCODE_TRACESTATE"]
   const optionMetricsTemporality = pickMetricsTemporality(resolvedOptions.metricsTemporality)
   const envMetricsTemporality = pickMetricsTemporality(process.env["OPENCODE_OTLP_METRICS_TEMPORALITY"])
+  const optionTelemetryProfile = pickTelemetryProfile(resolvedOptions.telemetryProfile)
+  const envTelemetryProfile = pickTelemetryProfile(process.env["OPENCODE_TELEMETRY_PROFILE"])
+  const telemetryProfile = optionTelemetryProfile ?? envTelemetryProfile ?? "opencode"
   const metricsTemporality = optionMetricsTemporality ?? envMetricsTemporality
+    ?? (telemetryProfile === "claude-code" ? "delta" : undefined)
   const protocol = pickProtocol(resolvedOptions.protocol)
     ?? pickProtocol(process.env["OPENCODE_OTLP_PROTOCOL"])
     ?? "grpc"
@@ -166,6 +180,18 @@ export function loadConfig(options: OtelPluginOptions = {}): PluginConfig {
     console.warn(
       `[opencode-plugin-otel] Invalid metrics temporality "${process.env["OPENCODE_OTLP_METRICS_TEMPORALITY"]}". ` +
         `Expected one of: cumulative, delta, lowmemory. Value ignored.`,
+    )
+  }
+
+  if (resolvedOptions.telemetryProfile !== undefined && !optionTelemetryProfile) {
+    console.warn("[opencode-plugin-otel] Invalid telemetry profile option. Value ignored.")
+  }
+  if (process.env["OPENCODE_TELEMETRY_PROFILE"] && !envTelemetryProfile) {
+    console.warn("[opencode-plugin-otel] Invalid OPENCODE_TELEMETRY_PROFILE. Value ignored.")
+  }
+  if (telemetryProfile === "claude-code" && metricsTemporality !== "delta") {
+    console.warn(
+      `[opencode-plugin-otel] Claude Code compatibility is degraded with metrics temporality "${metricsTemporality}"; expected "delta".`,
     )
   }
 
@@ -199,6 +225,7 @@ export function loadConfig(options: OtelPluginOptions = {}): PluginConfig {
     metricsTemporality,
     disabledMetrics,
     disabledTraces,
+    telemetryProfile,
   }
 }
 

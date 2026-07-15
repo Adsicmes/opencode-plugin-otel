@@ -294,7 +294,8 @@ describe("handleMessagePartUpdated", () => {
     const record = logger.records.at(0)!
     expect(record.body).toBe("tool_result")
     expect(record.attributes?.["success"]).toBe(false)
-    expect(record.attributes?.["error"]).toBe("tool failed")
+    expect(record.attributes?.["error"]).toBe("ToolError (message_length=11)")
+    expect(record.attributes?.["error_size_bytes"]).toBe(11)
     expect(pluginLog.calls.find(c => c.level === "error")?.level).toBe("error")
   })
 
@@ -416,7 +417,8 @@ describe("handleMessagePartUpdated — subtask parts", () => {
     expect(record.attributes?.["agent"]).toBe("plan")
     expect(record.attributes?.["agent.name"]).toBe("plan")
     expect(record.attributes?.["agent.type"]).toBe("subagent")
-    expect(record.attributes?.["description"]).toBe("Plan the feature")
+    expect(record.attributes?.["description"]).toBeUndefined()
+    expect(record.attributes?.["description_length"]).toBe("Plan the feature".length)
     expect(record.attributes?.["prompt_length"]).toBe("Create a plan".length)
   })
 

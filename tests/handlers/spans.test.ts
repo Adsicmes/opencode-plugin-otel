@@ -127,11 +127,12 @@ describe("session spans", () => {
     expect(tracer.spans[0]!.attributes[AGENT_NAME]).toBe("build")
   })
 
-  test("run span redacts prompt content attributes", () => {
+  test("run span omits prompt content and records length", () => {
     const { ctx, tracer } = makeCtx()
     handleRunStarted("user_1", "ses_1", "build", "private prompt", "anthropic/claude", 1000, ctx)
-    expect(tracer.spans[0]!.attributes[INPUT_VALUE]).toBe("******")
-    expect(tracer.spans[0]!.attributes[LLM_INPUT_MESSAGES]).toBe("******")
+    expect(tracer.spans[0]!.attributes[INPUT_VALUE]).toBeUndefined()
+    expect(tracer.spans[0]!.attributes[LLM_INPUT_MESSAGES]).toBeUndefined()
+    expect(tracer.spans[0]!.attributes["input.length"]).toBe("private prompt".length)
   })
 
   test("run span carries is_subagent=false for root session", () => {
@@ -319,7 +320,7 @@ describe("tool spans", () => {
     const { ctx, tracer } = makeCtx()
     handleMessagePartUpdated(makeToolPartUpdated("running"), ctx)
     handleMessagePartUpdated(makeToolPartUpdated("error"), ctx)
-    expect(tracer.spans[0]!.attributes["tool.error"]).toBe("fail")
+    expect(tracer.spans[0]!.attributes["tool.error"]).toBe("ToolError (message_length=4)")
   })
 
   test("tool span removed from pendingToolSpans after completion", () => {
@@ -427,7 +428,7 @@ describe("message (LLM) spans", () => {
     expect(span.attributes["agent.type"]).toBe("subagent")
   })
 
-  test("LLM span redacts input and output content attributes", () => {
+  test("LLM span omits input and output content and records lengths", () => {
     const { ctx, tracer } = makeCtx()
     handleRunStarted("user_1", "ses_1", "build", "private prompt", "anthropic/claude", 900, ctx)
     startMessageSpan("ses_1", "msg_1", "user_1", "claude", "anthropic", 1000, ctx)
@@ -440,10 +441,12 @@ describe("message (LLM) spans", () => {
     handleMessageUpdated(makeAssistantMessageUpdated({ id: "msg_1", parentID: "user_1" }), ctx)
 
     const span = tracer.spans[1]!
-    expect(span.attributes[INPUT_VALUE]).toBe("******")
-    expect(span.attributes[LLM_INPUT_MESSAGES]).toBe("******")
-    expect(span.attributes[OUTPUT_VALUE]).toBe("******")
-    expect(span.attributes[LLM_OUTPUT_MESSAGES]).toBe("******")
+    expect(span.attributes[INPUT_VALUE]).toBeUndefined()
+    expect(span.attributes[LLM_INPUT_MESSAGES]).toBeUndefined()
+    expect(span.attributes[OUTPUT_VALUE]).toBeUndefined()
+    expect(span.attributes[LLM_OUTPUT_MESSAGES]).toBeUndefined()
+    expect(span.attributes["input.length"]).toBe("private prompt".length)
+    expect(span.attributes["output.length"]).toBe("private response".length)
   })
 
   test("handleMessageUpdated no-ops span handling when no span exists for messageID", () => {

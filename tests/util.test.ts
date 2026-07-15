@@ -15,10 +15,16 @@ describe("errorSummary", () => {
     expect(errorSummary({ name: "APIError", data: { code: 500 } })).toBe("APIError")
   })
 
-  test("returns name: message when data has message", () => {
+  test("returns name and message length without content", () => {
     expect(errorSummary({ name: "APIError", data: { message: "rate limited" } })).toBe(
-      "APIError: rate limited",
+      "APIError (message_length=12)",
     )
+  })
+
+  test("bounds and sanitizes the error name", () => {
+    const summary = errorSummary({ name: "Bad error secret".repeat(20) })
+    expect(summary).toMatch(/^Bad_error_secret/)
+    expect(summary.length).toBeLessThanOrEqual(64)
   })
 
   test("returns name when data is a primitive", () => {

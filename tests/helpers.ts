@@ -2,6 +2,7 @@ import type { HandlerContext, Instruments } from "../src/types.ts"
 import type { LogRecord } from "@opentelemetry/api-logs"
 import type { Counter, Gauge, Histogram, Span, SpanOptions, Tracer, Context, SpanContext, SpanStatus, Attributes } from "@opentelemetry/api"
 import { ROOT_CONTEXT, SpanStatusCode, trace } from "@opentelemetry/api"
+import { createTelemetryProfile, type TelemetryProfileName } from "../src/schema.ts"
 
 export type SpyCounter = {
   calls: Array<{ value: number; attrs: Record<string, unknown> }>
@@ -177,6 +178,7 @@ export function makeCtx(
   disabledTraces: string[] = [],
   logsEnabled = true,
   extraCommonAttrs: Record<string, string> = {},
+  profileName: TelemetryProfileName = "opencode",
 ): MockContext {
   const session = makeCounter()
   const token = makeCounter()
@@ -196,6 +198,7 @@ export function makeCtx(
   const logger = makeLogger()
   const pluginLog = makePluginLog()
   const tracer = makeTracer()
+  const profile = createTelemetryProfile(profileName, profileName === "claude-code" ? "claude_code." : "opencode.")
 
   const instruments: Instruments = {
     sessionCounter: session as unknown as Counter,
@@ -237,11 +240,16 @@ export function makeCtx(
     activeRuns: new Map(),
     assistantRuns: new Map(),
     pendingRuns: new Map(),
-    runInputs: new Map(),
+    runInputLengths: new Map(),
     sessionSpans: new Map(),
     sessionSpanContexts: new Map(),
     messageSpans: new Map(),
-    messageOutputs: new Map(),
+    messageOutputLengths: new Map(),
+    promptContexts: new Map(),
+    promptContextsByRun: new Map(),
+    eventSequences: new Map(),
+    interactionSequences: new Map(),
+    profile,
   }
 
   return {

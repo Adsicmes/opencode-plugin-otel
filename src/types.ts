@@ -1,5 +1,6 @@
 import type { Context, Counter, Gauge, Histogram, Span, SpanContext, Tracer } from "@opentelemetry/api"
 import type { LogRecord } from "@opentelemetry/api-logs"
+import type { TelemetryProfile } from "./schema.ts"
 
 /** Numeric priority map for log levels; higher value = higher severity. */
 export const LEVELS = { debug: 0, info: 1, warn: 2, error: 3 } as const
@@ -26,13 +27,24 @@ export type PendingToolSpan = {
   sessionID: string
   startMs: number
   span?: Span
+  spanContext?: SpanContext
 }
 
 /** Permission prompt tracked between `permission.updated` and `permission.replied`. */
 export type PendingPermission = {
   type: string
-  title: string
+  titleLength: number
   sessionID: string
+  messageID?: string
+  toolUseID?: string
+  promptID?: string
+}
+
+export type PromptContext = {
+  sessionID: string
+  promptID: string
+  interactionSequence: number
+  runID?: string
 }
 
 /** OTel metric instruments created once at plugin startup and shared via `HandlerContext`. */
@@ -70,7 +82,7 @@ export type SessionTotals = {
 /** Pending root-run metadata captured from `chat.message` until the user message ID is known. */
 export type PendingRun = {
   agent: string
-  promptText: string
+  promptLength: number
   model: string
   startTime: number
 }
@@ -95,9 +107,14 @@ export type HandlerContext = {
   activeRuns: Map<string, string>
   assistantRuns: Map<string, string>
   pendingRuns: Map<string, PendingRun>
-  runInputs: Map<string, string>
+  runInputLengths: Map<string, number>
   sessionSpans: Map<string, Span>
   sessionSpanContexts: Map<string, SpanContext>
   messageSpans: Map<string, Span>
-  messageOutputs: Map<string, string>
+  messageOutputLengths: Map<string, number>
+  promptContexts: Map<string, PromptContext>
+  promptContextsByRun: Map<string, PromptContext>
+  eventSequences: Map<string, number>
+  interactionSequences: Map<string, number>
+  profile: TelemetryProfile
 }

@@ -91,7 +91,7 @@ describe("disabled logs", () => {
 
   test("suppresses tool, permission, commit, and idle logs", async () => {
     const { ctx, logger } = makeCtx("proj_test", [], [], false)
-    ctx.pendingPermissions.set("perm_1", { type: "bash", title: "run bash", sessionID: "ses_1" })
+    ctx.pendingPermissions.set("perm_1", { type: "bash", titleLength: 8, sessionID: "ses_1" })
     await handleSessionCreated(makeSessionCreated("ses_1"), ctx)
     await handleMessagePartUpdated(makeToolPartUpdated("running"), ctx)
     await handleMessagePartUpdated(makeToolPartUpdated("completed"), ctx)

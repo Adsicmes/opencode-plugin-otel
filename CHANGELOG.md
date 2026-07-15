@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## Unreleased
+
+### Features
+
+* **telemetry:** add an opt-in Claude Code-compatible profile for metrics, events, and traces
+
+### Security
+
+* redact prompt and tool input/output content from telemetry by default
+
 ## [1.2.2](https://github.com/DEVtheOPS/opencode-plugin-otel/compare/v1.2.1...v1.2.2) (2026-07-02)
 
 

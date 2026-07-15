@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach } from "bun:test"
+import { describe, test, expect, beforeEach, afterEach, spyOn } from "bun:test"
 import { parseAttributePairs, parseEnvInt, loadConfig, resolveHelperPath, resolveLogLevel, TRACE_TYPES } from "../src/config.ts"
 
 describe("parseAttributePairs", () => {
@@ -75,6 +75,7 @@ describe("loadConfig", () => {
     "OPENCODE_DISABLE_METRICS",
     "OPENCODE_DISABLE_LOGS",
     "OPENCODE_DISABLE_TRACES",
+    "OPENCODE_TELEMETRY_PROFILE",
     "OTEL_EXPORTER_OTLP_HEADERS",
     "OTEL_RESOURCE_ATTRIBUTES",
     "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE",
@@ -90,6 +91,36 @@ describe("loadConfig", () => {
     expect(cfg.protocol).toBe("grpc")
     expect(cfg.metricsInterval).toBe(60000)
     expect(cfg.logsInterval).toBe(5000)
+    expect(cfg.telemetryProfile).toBe("opencode")
+  })
+
+  test("Claude Code profile defaults metrics temporality to delta", () => {
+    process.env["OPENCODE_TELEMETRY_PROFILE"] = "claude-code"
+    const cfg = loadConfig()
+    expect(cfg.telemetryProfile).toBe("claude-code")
+    expect(cfg.metricsTemporality).toBe("delta")
+    expect(process.env["OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE"]).toBe("delta")
+  })
+
+  test("plugin option selects the telemetry profile", () => {
+    process.env["OPENCODE_TELEMETRY_PROFILE"] = "opencode"
+    expect(loadConfig({ telemetryProfile: "claude-code" }).telemetryProfile).toBe("claude-code")
+  })
+
+  test("invalid profile option does not hide a valid environment profile", () => {
+    process.env["OPENCODE_TELEMETRY_PROFILE"] = "claude-code"
+    const warn = spyOn(console, "warn").mockImplementation(() => {})
+    expect(loadConfig({ telemetryProfile: "invalid" as never }).telemetryProfile).toBe("claude-code")
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  test("warns when Claude Code profile explicitly uses non-delta temporality", () => {
+    process.env["OPENCODE_TELEMETRY_PROFILE"] = "claude-code"
+    const warn = spyOn(console, "warn").mockImplementation(() => {})
+    expect(loadConfig({ metricsTemporality: "cumulative" }).metricsTemporality).toBe("cumulative")
+    expect(warn.mock.calls.some(call => String(call[0]).includes("compatibility is degraded"))).toBe(true)
+    warn.mockRestore()
   })
 
   test("enabled when OPENCODE_ENABLE_TELEMETRY is set", () => {
