@@ -245,6 +245,7 @@ export function makeCtx(
     sessionSpanContexts: new Map(),
     messageSpans: new Map(),
     messageOutputLengths: new Map(),
+    historicalMessages: new Map(),
     promptContexts: new Map(),
     promptContextsByRun: new Map(),
     eventSequences: new Map(),

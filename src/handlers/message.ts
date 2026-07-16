@@ -47,6 +47,15 @@ function serializedByteLength(value: unknown): number {
   return Buffer.byteLength(JSON.stringify(value) ?? "", "utf8")
 }
 
+/** Marks messages copied from before the current session started, such as fork history. */
+export function isHistoricalMessageReplay(e: EventMessageUpdated, ctx: HandlerContext): boolean {
+  const info = e.properties.info
+  const sessionStart = ctx.sessionTotals.get(info.sessionID)?.startMs
+  if (sessionStart === undefined || info.time.created >= sessionStart) return false
+  setBoundedMap(ctx.historicalMessages, `${info.sessionID}:${info.id}`, true)
+  return true
+}
+
 /**
  * Handles a completed assistant message: increments token and cost counters, emits
  * either an `api_request` or `api_error` log event, and ends the LLM span for this message.
@@ -56,6 +65,7 @@ function serializedByteLength(value: unknown): number {
 export function handleMessageUpdated(e: EventMessageUpdated, ctx: HandlerContext) {
   const msg = e.properties.info
   if (msg.role !== "assistant") return
+  if (isHistoricalMessageReplay(e, ctx)) return
   const assistant = msg as AssistantMessage
   setBoundedMap(ctx.assistantRuns, assistant.id, assistant.parentID)
   if (!assistant.time.completed) return
@@ -243,6 +253,7 @@ export function handleMessageUpdated(e: EventMessageUpdated, ctx: HandlerContext
  */
 export function handleMessagePartUpdated(e: EventMessagePartUpdated, ctx: HandlerContext) {
   const part = e.properties.part
+  if (ctx.historicalMessages.has(`${part.sessionID}:${part.messageID}`)) return
 
   if (part.type === "text") {
     const key = `${part.sessionID}:${part.messageID}`

@@ -143,6 +143,9 @@ function sweepSession(sessionID: string, ctx: HandlerContext, retainRunCorrelati
   for (const key of ctx.messageOutputLengths.keys()) {
     if (key.startsWith(msgPrefix)) ctx.messageOutputLengths.delete(key)
   }
+  for (const key of ctx.historicalMessages.keys()) {
+    if (key.startsWith(msgPrefix)) ctx.historicalMessages.delete(key)
+  }
   if (!retainRunCorrelations) {
     for (const [runID, prompt] of ctx.promptContextsByRun) {
       if (prompt.sessionID === sessionID) ctx.promptContextsByRun.delete(runID)

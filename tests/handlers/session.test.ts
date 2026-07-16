@@ -116,6 +116,17 @@ describe("handleSessionIdle", () => {
     expect(ctx.pendingToolSpans.has("ses_other:call_2")).toBe(true)
   })
 
+  test("sweeps historical message markers for the session", () => {
+    const { ctx } = makeCtx()
+    ctx.historicalMessages.set("ses_1:msg_1", true)
+    ctx.historicalMessages.set("ses_other:msg_2", true)
+
+    handleSessionIdle(makeSessionIdle("ses_1"), ctx)
+
+    expect(ctx.historicalMessages.has("ses_1:msg_1")).toBe(false)
+    expect(ctx.historicalMessages.has("ses_other:msg_2")).toBe(true)
+  })
+
   test("records session duration histogram when totals exist", async () => {
     const { ctx, histograms } = makeCtx()
     await handleSessionCreated(makeSessionCreated("ses_1", Date.now() - 1000), ctx)

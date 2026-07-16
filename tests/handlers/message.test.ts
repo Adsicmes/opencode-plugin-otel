@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test"
-import { handleMessageUpdated, handleMessagePartUpdated } from "../../src/handlers/message.ts"
+import { handleMessageUpdated, handleMessagePartUpdated, isHistoricalMessageReplay } from "../../src/handlers/message.ts"
 import { makeCtx } from "../helpers.ts"
 import type { EventMessageUpdated, EventMessagePartUpdated } from "@opencode-ai/sdk"
 
@@ -83,7 +83,7 @@ function makeIncompleteAssistantMessage(): EventMessageUpdated {
 
 function makeToolPartUpdated(
   status: "running" | "completed" | "error",
-  overrides: { sessionID?: string; callID?: string; tool?: string; startMs?: number; endMs?: number } = {},
+  overrides: { sessionID?: string; messageID?: string; callID?: string; tool?: string; startMs?: number; endMs?: number } = {},
 ): EventMessagePartUpdated {
   const sessionID = overrides.sessionID ?? "ses_1"
   const callID = overrides.callID ?? "call_1"
@@ -103,6 +103,7 @@ function makeToolPartUpdated(
       part: {
         type: "tool",
         sessionID,
+        messageID: overrides.messageID ?? "msg_1",
         callID,
         tool: overrides.tool ?? "bash",
         state,
@@ -122,6 +123,50 @@ describe("handleMessageUpdated", () => {
     const { ctx, counters } = makeCtx()
     await handleMessageUpdated(makeIncompleteAssistantMessage(), ctx)
     expect(counters.token.calls).toHaveLength(0)
+  })
+
+  test("ignores completed messages copied from before the session started", async () => {
+    const { ctx, counters, logger } = makeCtx()
+    ctx.sessionTotals.set("ses_1", { startMs: 3000, tokens: 0, cost: 0, messages: 0, agent: "unknown", agentType: "primary" })
+
+    await handleMessageUpdated(
+      makeAssistantMessageUpdated({ sessionID: "ses_1", time: { created: 1000, completed: 2000 } }),
+      ctx,
+    )
+
+    expect(counters.token.calls).toHaveLength(0)
+    expect(counters.cost.calls).toHaveLength(0)
+    expect(counters.message.calls).toHaveLength(0)
+    expect(counters.modelUsage.calls).toHaveLength(0)
+    expect(logger.records).toHaveLength(0)
+    expect(ctx.sessionTotals.get("ses_1")?.messages).toBe(0)
+    expect(ctx.historicalMessages.has("ses_1:msg_1")).toBe(true)
+  })
+
+  test("processes messages created when the session starts", async () => {
+    const { ctx, counters } = makeCtx()
+    ctx.sessionTotals.set("ses_1", { startMs: 1000, tokens: 0, cost: 0, messages: 0, agent: "build", agentType: "primary" })
+
+    await handleMessageUpdated(
+      makeAssistantMessageUpdated({ sessionID: "ses_1", time: { created: 1000, completed: 2000 } }),
+      ctx,
+    )
+
+    expect(counters.message.calls).toHaveLength(1)
+  })
+
+  test("marks copied user messages so fork history does not start runs", () => {
+    const { ctx } = makeCtx()
+    ctx.sessionTotals.set("ses_1", { startMs: 3000, tokens: 0, cost: 0, messages: 0, agent: "unknown", agentType: "primary" })
+    const event = {
+      type: "message.updated",
+      properties: {
+        info: { id: "user_1", role: "user", sessionID: "ses_1", time: { created: 1000 } },
+      },
+    } as unknown as EventMessageUpdated
+
+    expect(isHistoricalMessageReplay(event, ctx)).toBe(true)
+    expect(ctx.historicalMessages.has("ses_1:user_1")).toBe(true)
   })
 
   test("increments all token counters", async () => {
@@ -255,6 +300,18 @@ describe("handleMessagePartUpdated", () => {
     await handleMessagePartUpdated(makeToolPartUpdated("running", { startMs: 1234 }), ctx)
     expect(ctx.pendingToolSpans.has("ses_1:call_1")).toBe(true)
     expect(ctx.pendingToolSpans.get("ses_1:call_1")!.startMs).toBe(1234)
+  })
+
+  test("ignores parts belonging to copied historical messages", async () => {
+    const { ctx, histograms, logger } = makeCtx()
+    ctx.historicalMessages.set("ses_1:msg_1", true)
+
+    await handleMessagePartUpdated(makeToolPartUpdated("running"), ctx)
+    await handleMessagePartUpdated(makeToolPartUpdated("completed"), ctx)
+
+    expect(ctx.pendingToolSpans.size).toBe(0)
+    expect(histograms.tool.calls).toHaveLength(0)
+    expect(logger.records).toHaveLength(0)
   })
 
   test("records histogram on tool completion", async () => {

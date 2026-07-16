@@ -23,7 +23,7 @@ import { probeEndpoint } from "./probe.ts"
 import { setupOtel, createInstruments, forceFlushOtel } from "./otel.ts"
 import { remoteParentContext } from "./trace-context.ts"
 import { handleSessionCreated, handleSessionDeleted, handleSessionIdle, handleSessionError, handleSessionStatus, handleRunStarted } from "./handlers/session.ts"
-import { handleMessageUpdated, handleMessagePartUpdated, startMessageSpan } from "./handlers/message.ts"
+import { handleMessageUpdated, handleMessagePartUpdated, isHistoricalMessageReplay, startMessageSpan } from "./handlers/message.ts"
 import { handlePermissionUpdated, handlePermissionReplied } from "./handlers/permission.ts"
 import { handleSessionDiff, handleCommandExecuted } from "./handlers/activity.ts"
 import { agentAttrs, errorSummary, getSessionAgentMeta, setBoundedMap } from "./util.ts"
@@ -122,6 +122,7 @@ export const OtelPlugin: Plugin = async ({ project, client, directory, worktree 
   const sessionSpanContexts = new Map()
   const messageSpans = new Map()
   const messageOutputLengths = new Map()
+  const historicalMessages = new Map()
   const promptContexts = new Map()
   const promptContextsByRun = new Map()
   const eventSequences = new Map()
@@ -169,6 +170,7 @@ export const OtelPlugin: Plugin = async ({ project, client, directory, worktree 
     sessionSpanContexts,
     messageSpans,
     messageOutputLengths,
+    historicalMessages,
     promptContexts,
     promptContextsByRun,
     eventSequences,
@@ -331,6 +333,7 @@ export const OtelPlugin: Plugin = async ({ project, client, directory, worktree 
         case "message.updated": {
           const msgEvt = event as EventMessageUpdated
           const info = msgEvt.properties.info
+          if (isHistoricalMessageReplay(msgEvt, ctx)) break
           if (info.role === "user") {
             const pendingRun = pendingRuns.get(info.sessionID)
             if (!sessionSpans.has(info.sessionID) && (pendingRun || activeRuns.get(info.sessionID) !== info.id)) {

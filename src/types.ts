@@ -112,6 +112,7 @@ export type HandlerContext = {
   sessionSpanContexts: Map<string, SpanContext>
   messageSpans: Map<string, Span>
   messageOutputLengths: Map<string, number>
+  historicalMessages: Map<string, true>
   promptContexts: Map<string, PromptContext>
   promptContextsByRun: Map<string, PromptContext>
   eventSequences: Map<string, number>
